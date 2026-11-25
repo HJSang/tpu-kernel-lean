@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "jax_pallas": {
+    "repository": "jax-ml/jax",
+    "commit": "35066e1",
+    "note": "Reference JAX Pallas source used when writing TpuKernelLean/Pallas/Core.lean."
+  },
+  "kernels": {
+    "kv_page_write": {
+      "lean_module": "TpuKernelLean.Examples.KvPageWrite",
+      "level": "pallas_call",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
+      "path": "sglang_tpu/kv_page_write.py",
+      "blob_sha": "98eb92b6bcf3ce3868bfee2d472f112d8a54eb8f",
+      "functions": [
+        "_kernel",
+        "write_pages"
+      ],
+      "not_modelled": [
+        "get_write_pages_op",
+        "write_pages_torch"
+      ]
+    },
+    "qk_norm_rope": {
+      "lean_module": "TpuKernelLean.Examples.QkNormRope",
+      "level": "pallas_call",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
+      "path": "sglang_tpu/qk_norm_rope.py",
+      "blob_sha": "86c9e156d6b6261e8073d1004960c581b6b78cf1",
+      "functions": [
+        "_rms",
+        "_rope_neox",
+        "_qk_norm_rope_kernel",
+        "_qk_norm_rope_jax"
+      ],
+      "not_modelled": [
+        "_get_qk_norm_rope_op",
+        "register_tpu_qk_norm_rope_op",
+        "can_use_tpu_fused_qk_norm_rope",
+        "tpu_fused_qk_norm_rope"
+      ]
+    },
+    "fp8_linear_small_m": {
+      "lean_module": "TpuKernelLean.Examples.Fp8LinearSmallM",
+      "level": "pallas_call",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
+      "path": "sglang_tpu/kernels/fp8_linear_small_m.py",
+      "blob_sha": "86833b00b72766b814234effe819ab92fd3a9269",
+      "functions": [
+        "_tile_n",
+        "supports",
+        "_kernel",
+        "fp8_linear_small_m"
+      ],
+      "not_modelled": []
+    },
+    "flash_attention": {
+      "lean_module": "TpuKernelLean.Examples.FlashAttention",
+      "level": "algorithm_only",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
+      "path": "sglang_tpu/kernels/flash_attention.py",
+      "blob_sha": "d104bd4c9aa1275eb5c89c5ea4a54b12adfcba7c",
+      "functions": [
+        "_flash_attention_kernel_single_batch",
+        "mha_reference_no_custom_vjp"
+      ],
+      "not_modelled": [
+        "flash_attention",
+        "_flash_attention",
+        "_flash_attention_impl",
+        "_flash_attention_kernel",
+        "_flash_attention_kernel_single_batch_single_step",
+        "below_or_on_diag",
+        "_verify_block",
+        "_fwd_cost_estimate",
+        "mha_reference",
+        "_mha_reference"
+      ],
+      "note": "Algorithm-only unnormalized online-softmax recurrence; not tied to pallas_call and differs from per-step renormalization at flash_attention.py:357-363."
+    },
+    "true_on_policy_norm": {
+      "lean_module": "TpuKernelLean.Examples.TrueOnPolicyNorm",
+      "level": "pallas_call",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "pr": 2299,
+      "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
+      "path": "sglang_tpu/rl/true_on_policy/norm_kernel.py",
+      "blob_sha": "1809572d264ba17a80561e4100f589020c66a8ce",
+      "functions": [
+        "_norm_kernel",
+        "_gated_norm_kernel",
+        "_norm_call"
+      ],
+      "not_modelled": [
+        "_jax_rms_norm, _jax_rms_norm_residual, _jax_gated_rms_norm (jax entry points)",
+        "rms_norm (torch wrapper and custom backward)",
+        "gated_rms_norm (torch wrapper and custom backward)"
+      ],
+      "note": "Merged upstream as PR 2299. The proof was written against PR head 0f138b0; the changes since then are in the torch backward only, which is not modelled."
+    },
+    "true_on_policy_matmul": {
+      "lean_module": "TpuKernelLean.Examples.TrueOnPolicyMatmul",
+      "level": "pallas_call",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "pr": 2299,
+      "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
+      "path": "sglang_tpu/rl/true_on_policy/matmul_kernel.py",
+      "blob_sha": "afb312207a3758b70e04733c9fd3ef1515dc6c57",
+      "functions": [
+        "_mm_kernel",
+        "_jax_matmul"
+      ],
+      "not_modelled": [
+        "torch/python wrapper dispatch"
+      ],
+      "note": "Merged upstream as PR 2299. The proof was written against PR head 0f138b0, where the N block was the constant _MM_BN; it is now row_block(n, _MM_BN, 128), which the Lean parameter bn already covers."
+    },
+    "block_scaled_mm": {
+      "lean_module": "TpuKernelLean.Examples.BlockScaledMm",
+      "level": "pallas_call",
+      "source": "unreferenced",
+      "note": "Two block-scaled FP8 matmul kernels (any block size; block 128 with optional bias). Their sources are not public, so no repository, path or commit is recorded and the staleness check skips this entry."
+    },
+    "grouped_scaled_mm": {
+      "lean_module": "TpuKernelLean.Examples.GroupedScaledMm",
+      "level": "pallas_call",
+      "source": "unreferenced",
+      "note": "A grouped row-scaled FP8 matmul kernel (b stored [G, K, N]). Its source is not public, so no repository, path or commit is recorded and the staleness check skips this entry. The visit-schedule construction is not modelled; ValidSchedule states what the proof needs from it."
+    }
+  }
+}

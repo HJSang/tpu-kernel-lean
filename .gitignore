@@ -1,0 +1,14 @@
+.lake/
+.e2e-venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local helper files
+.build-request
+.build-running
+.build-result
+.build-result.tmp
+PR.md
+AXIOMS.lean

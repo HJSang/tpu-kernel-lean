@@ -1,0 +1,4 @@
+namespace GateFixture
+def fast (n : Nat) : Nat := n + 1
+@[implemented_by fast] def slow (n : Nat) : Nat := n
+end GateFixture

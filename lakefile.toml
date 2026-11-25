@@ -1,0 +1,15 @@
+name = "TpuKernelLean"
+defaultTargets = ["TpuKernelLean"]
+
+[leanOptions]
+autoImplicit = false
+relaxedAutoImplicit = false
+warningAsError = true
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "master"
+
+[[lean_lib]]
+name = "TpuKernelLean"

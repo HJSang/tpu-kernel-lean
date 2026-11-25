@@ -1,0 +1,51 @@
+name: Lean CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache elan
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: ubuntu-24.04-${{ runner.arch }}-elan-${{ hashFiles('lean-toolchain') }}
+
+      - name: Install elan and toolchain
+        run: |
+          if [ ! -x "$HOME/.elan/bin/elan" ]; then
+            curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+              | sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+          "$HOME/.elan/bin/elan" toolchain install "$(tr -d '[:space:]' < lean-toolchain)"
+
+      - name: Cache .lake/build
+        uses: actions/cache@v4
+        with:
+          path: .lake/build
+          key: ubuntu-24.04-${{ runner.arch }}-build-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'TpuKernelLean.lean', 'TpuKernelLean/**/*.lean') }}
+
+      - name: Fetch Mathlib cache
+        run: lake exe cache get
+
+      - name: Build TpuKernelLean
+        run: lake build
+
+      - name: Run CI checks
+        run: bash scripts/ci.sh
