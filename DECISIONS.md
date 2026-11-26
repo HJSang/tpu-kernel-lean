@@ -94,13 +94,22 @@ or that narrows what the Lean theorems cover. Kinds:
 - Alternative: integrate DMA events and HBM refs into `stepGrid`.
 - Kind: scope.
 
-### D-CORE-FOOTPRINT: `KernelSpec` does not forbid footprint overlapping inputs
-- Decided: `KernelSpec.Correct` (`TpuKernelLean/Spec.lean:38,52-59`) checks
-  `Mem.agreeOutside spec.footprint`; disjointness of output buffers from read-only input buffers
-  is stated in each kernel's `requires`.
-- Basis: allows in-place state kernels (like `write_pages`) to share the same `KernelSpec` type.
-- Alternative: separate read-only input footprint from mutable footprint in `KernelSpec`.
-- Kind: launch obligation.
+### D-CORE-FOOTPRINT: `KernelSpec.WellFormed` enforces footprint/read separation and exact equality
+- Decided: `KernelSpec` (`TpuKernelLean/Spec.lean`) has no caller-chosen `closeOut`/`closeSt`
+  predicates (`KernelSpec.Correct` requires exact equality of outputs and post-state), and
+  `KernelSpec.Correct` includes `KernelSpec.WellFormed` under `requires`: `readOut` and `readSt`
+  depend only on memory inside `footprint` (`Mem.agreeOn`), while `readIn` depends only on memory
+  outside `footprint` (`Mem.agreeOutside`).
+- Basis: prevents specs from using trivial closeness predicates, over-broad footprints (such as
+  `Set.univ`) that swallow inputs and vacate framing, or `readOut`/`readSt` functions that read
+  untouched buffers outside `footprint`. Checking `WellFormed` under `requires` keeps specs
+  parameterized over arbitrary `BufId`s (with buffer distinctness stated in `requires`) while
+  forcing layout well-formedness unconditionally across all memory pairs whenever `requires` is
+  satisfiable.
+- Alternative: make `KernelSpec` carry explicit `Layout` objects and derive `footprint`
+  structurally, or lift buffer distinctness out of `requires` into every `*_correct` theorem's
+  hypotheses.
+- Kind: stricter.
 
 ## `KvPageWrite` (`sglang_tpu/kv_page_write.py`)
 

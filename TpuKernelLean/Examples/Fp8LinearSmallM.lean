@@ -236,7 +236,7 @@ noncomputable def fp8LinearRun (ops : FP8LinearOps) (fp8Dtype outDtype : Dtype)
   pallasCall (gridSpec tokens k n tile_n xBuf wBuf wsBuf oBuf)
     (body ops fp8Dtype outDtype tokens k tile_n)
 
-/-- Five-part `KernelSpec` for `fp8_linear_small_m`. -/
+/-- Four-part `KernelSpec` for `fp8_linear_small_m`. -/
 noncomputable def fp8LinearSpec (ops : FP8LinearOps) (fp8Dtype outDtype : Dtype)
     (tokens k n tile_n : ℕ) (xBuf wBuf wsBuf oBuf : BufId) :
     KernelSpec (Fp8LinearIn tokens k n) Unit (Tensor ℝ [tokens, n]) :=
@@ -507,12 +507,29 @@ theorem fp8Linear_correct (ops : FP8LinearOps) (fp8Dtype outDtype : Dtype)
     subst hx'
     simpa [Mem.bufFootprint] using hbuf.symm
 
-/-- `fp8_linear_small_m` satisfies its five-part `KernelSpec`. -/
+/-- `fp8LinearSpec` has a well-formed layout whenever `oBuf` is disjoint from all three input
+buffers. -/
+theorem fp8LinearSpec_wellFormed (ops : FP8LinearOps) (fp8Dtype outDtype : Dtype)
+    (tokens k n tile_n : ℕ) (xBuf wBuf wsBuf oBuf : BufId)
+    (hx : oBuf ≠ xBuf) (hw : oBuf ≠ wBuf) (hws : oBuf ≠ wsBuf) :
+    (fp8LinearSpec ops fp8Dtype outDtype tokens k n tile_n xBuf wBuf wsBuf oBuf).WellFormed where
+  readOut_on_footprint _ _ hagree :=
+    Layout.read_eq_of_agreeOn _ (Layout.footprint_subset_buf _) hagree
+  readSt_on_footprint _ _ _ := rfl
+  readIn_outside_footprint _ _ hagree := by
+    dsimp only [fp8LinearSpec]
+    rw [Layout.read_eq_of_agreeOutside _ (Layout.disjoint_bufFootprint _ hx.symm) hagree,
+        Layout.read_eq_of_agreeOutside _ (Layout.disjoint_bufFootprint _ hw.symm) hagree,
+        Layout.read_eq_of_agreeOutside _ (Layout.disjoint_bufFootprint _ hws.symm) hagree]
+
+/-- `fp8_linear_small_m` satisfies its `KernelSpec`. -/
 theorem fp8LinearSpec_correct (ops : FP8LinearOps) (fp8Dtype outDtype : Dtype)
     (tokens k n tile_n : ℕ) (xBuf wBuf wsBuf oBuf : BufId) :
     (fp8LinearSpec ops fp8Dtype outDtype tokens k n tile_n xBuf wBuf wsBuf oBuf).Correct
       (fp8LinearRun ops fp8Dtype outDtype tokens k n tile_n xBuf wBuf wsBuf oBuf) := by
   intro junk m0 ⟨hsup, hfp8, hx, hw, hws⟩
+  refine ⟨fp8LinearSpec_wellFormed ops fp8Dtype outDtype tokens k n tile_n
+    xBuf wBuf wsBuf oBuf hx hw hws, ?_⟩
   obtain ⟨m', hcall, hval, hframe⟩ :=
     fp8Linear_correct ops fp8Dtype outDtype hfp8 tokens k n tile_n hsup
       xBuf wBuf wsBuf oBuf hx hw hws junk m0

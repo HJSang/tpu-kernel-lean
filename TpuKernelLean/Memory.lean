@@ -24,6 +24,10 @@ def write (m : Mem) (buf : BufId) (off : ℕ) (v : ℝ) : Mem :=
 def agreeOutside (S : Set Addr) (m m' : Mem) : Prop :=
   ∀ a : Addr, a ∉ S → m.read a.1 a.2 = m'.read a.1 a.2
 
+/-- Memories `m` and `m'` agree on every address inside `S`. -/
+def agreeOn (S : Set Addr) (m m' : Mem) : Prop :=
+  ∀ a : Addr, a ∈ S → m.read a.1 a.2 = m'.read a.1 a.2
+
 /-- The set of all addresses belonging to buffer `b`. -/
 def bufFootprint (b : BufId) : Set Addr :=
   { a | a.1 = b }

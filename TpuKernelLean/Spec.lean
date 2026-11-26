@@ -26,7 +26,8 @@ theorem withinTol_of_eq {s : List ℕ} {ε : ℝ} {a b : Tensor ℝ s}
   intro i
   simpa using hε
 
-/-- Five-part kernel specification over input `I`, in-place state `S`, and output `O` records. -/
+/-- Four-part kernel specification over input `I`, in-place state `S`, and output `O` records:
+`math`, `mutate`, layout (`readIn`, `readSt`, `readOut`, `footprint`), and `requires`. -/
 structure KernelSpec (I S O : Type*) where
   /-- Read input tensors from pre-execution memory. -/
   readIn : Mem → I
@@ -40,22 +41,34 @@ structure KernelSpec (I S O : Type*) where
   math : S → I → O
   /-- In-place state mutation specification from pre-state and inputs. -/
   mutate : S → I → S
-  /-- Output closeness relation (defaults to exact equality). -/
-  closeOut : O → O → Prop := Eq
-  /-- Post-state closeness relation (defaults to exact equality). -/
-  closeSt : S → S → Prop := Eq
   /-- Precondition on pre-state and inputs. -/
   requires : S → I → Prop
 
-/-- A kernel runner satisfies `spec` if on every valid memory and junk oracle the run is defined
-(`run` returns `none` for undefined behaviour) and meets `math`, `mutate`, and the frame condition. -/
+/-- Layout well-formedness of a `KernelSpec` with respect to its `footprint`:
+`readOut` and `readSt` depend only on addresses inside `footprint`, while `readIn` depends only on
+addresses outside `footprint`. -/
+structure KernelSpec.WellFormed {I S O : Type*} (spec : KernelSpec I S O) : Prop where
+  /-- Outputs depend only on memory inside `footprint`. -/
+  readOut_on_footprint : ∀ m₁ m₂ : Mem, Mem.agreeOn spec.footprint m₁ m₂ →
+    spec.readOut m₁ = spec.readOut m₂
+  /-- In-place state depends only on memory inside `footprint`. -/
+  readSt_on_footprint : ∀ m₁ m₂ : Mem, Mem.agreeOn spec.footprint m₁ m₂ →
+    spec.readSt m₁ = spec.readSt m₂
+  /-- Inputs do not depend on memory inside `footprint`. -/
+  readIn_outside_footprint : ∀ m₁ m₂ : Mem, Mem.agreeOutside spec.footprint m₁ m₂ →
+    spec.readIn m₁ = spec.readIn m₂
+
+/-- A kernel runner satisfies `spec` if on every valid memory and junk oracle `spec` has a
+well-formed layout, the run is defined (`run` returns `none` for undefined behaviour), outputs and
+post-state equal `math` and `mutate`, and every address outside `footprint` is unchanged. -/
 def KernelSpec.Correct {I S O : Type*} (spec : KernelSpec I S O)
     (run : (ℕ → ℝ) → Mem → Option Mem) : Prop :=
   ∀ (junk : ℕ → ℝ) (m : Mem),
     spec.requires (spec.readSt m) (spec.readIn m) →
+    spec.WellFormed ∧
     ∃ m', run junk m = some m' ∧
-      spec.closeOut (spec.readOut m') (spec.math (spec.readSt m) (spec.readIn m)) ∧
-      spec.closeSt (spec.readSt m') (spec.mutate (spec.readSt m) (spec.readIn m)) ∧
+      spec.readOut m' = spec.math (spec.readSt m) (spec.readIn m) ∧
+      spec.readSt m' = spec.mutate (spec.readSt m) (spec.readIn m) ∧
       Mem.agreeOutside spec.footprint m m'
 
 end TpuKernelLean

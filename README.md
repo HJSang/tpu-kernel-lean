@@ -64,15 +64,16 @@ bash scripts/ci.sh   # the gate and its fixture tests, as CI runs them
 
 ## Specs
 
-A `KernelSpec I S O` (`Spec.lean`) has five parts:
+A `KernelSpec I S O` (`Spec.lean`) has four parts:
 
 1. `math`: outputs as a function of state and inputs.
 2. `mutate`: the new value of in-place state (for example a KV cache).
 3. Layout: `readIn`, `readSt`, `readOut` read tensors from memory; `footprint` is what the kernel may write.
-4. Tolerance: `closeOut`, `closeSt` (exact equality by default; `withinTol ε`).
-5. `requires`: the caller's preconditions.
+4. `requires`: the caller's preconditions.
 
-`KernelSpec.Correct run` says: for every junk oracle and every memory meeting `requires`, the run is defined, outputs and state match the spec, and every address outside `footprint` is unchanged.
+`KernelSpec.WellFormed` ties the layout to `footprint`: `readOut` and `readSt` depend only on addresses inside `footprint` (`Mem.agreeOn`), and `readIn` depends only on addresses outside `footprint` (`Mem.agreeOutside`).
+
+`KernelSpec.Correct run` says: for every junk oracle and every memory meeting `requires`, `spec.WellFormed` holds, the run is defined, outputs and post-state equal `math` and `mutate` exactly, and every address outside `footprint` is unchanged. Approximate tolerance (`withinTol ε`) is not available in `KernelSpec` yet; a tolerance form can return once a floating-point rounding model is in place.
 
 ## The Pallas model
 
@@ -107,7 +108,7 @@ Within a defined run:
 | --- | --- |
 | `TpuKernelLean/Tensor.lean`, `Memory.lean`, `Layout.lean` | Tensors over `Idx` shapes, element-addressed memory, row-major layouts |
 | `TpuKernelLean/Dtype.lean` | Checked int32/int8 decoding (no flooring or clamping), float dtypes (`f32`, `bf16`, fp8 e4m3/e5m2) with fp8 range limits, and opaque float casts (`CastOps`) |
-| `TpuKernelLean/Spec.lean` | `KernelSpec`, `KernelSpec.Correct`, `withinTol` |
+| `TpuKernelLean/Spec.lean` | `KernelSpec`, `KernelSpec.WellFormed`, `KernelSpec.Correct`, `withinTol` |
 | `TpuKernelLean/Pallas/Core.lean` | `GridSpec`, `BlockSpec`, `Body`, `WellDefined`, `pallasExec`, `pallasCall` |
 | `TpuKernelLean/Pallas/Lemmas.lean` | `pallasExec_read_out`: for a kernel that rewrites its output blocks from scratch, each output buffer is the in-order sequence of its block stores |
 | `TpuKernelLean/Pallas/RowKernel.lean` | Any row-wise kernel (`[rows, H]` blocks, `[1, H]` weight): `RowKernel.correct` and `RowKernel.batch_invariant` |
@@ -141,7 +142,6 @@ Within a defined run:
   - Not modelled: Mosaic's block-shape alignment rules, VMEM capacity and double buffering, squeezed (`None`) block dimensions as a change of rank, memory spaces other than VMEM windows, `core_axis` in `emit_pipeline` and manual cross-core DMA.
   - The parallel execution model follows the Pallas documentation; the split itself happens in libtpu and has not been probed on hardware.
 - **Specs:**
-  - `KernelSpec` does not forbid a footprint that overlaps the inputs.
   - Precondition satisfiability is shown for one concrete instance per `pallas_call` kernel (`Tests/EndToEnd.lean`), not characterised in general.
   - Memory holds reals, so `-0.0` and `+0.0` are one value, and `±inf` and NaN are not modelled.
 - **Examples:**

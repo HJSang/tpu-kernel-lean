@@ -75,7 +75,7 @@ theorem kvPageWrite_endToEnd (junk : ℕ → ℝ) :
         first
         | rfl
         | simp [Examples.KvPageWrite.writePagesSpec, kvInitMem, Mem.read] at hij
-  obtain ⟨m', hcall, _, hst, _⟩ :=
+  obtain ⟨-, m', hcall, _, hst, _⟩ :=
     Examples.KvPageWrite.writePages_correct 3 2 2 0 1 2 (by decide) junk kvInitMem hreq
   have hread : ∀ (j : Fin 3) (p : Fin 2),
       m'.read 2 (j.val * 2 + p.val) =

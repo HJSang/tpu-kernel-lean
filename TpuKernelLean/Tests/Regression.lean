@@ -442,4 +442,94 @@ theorem empty_grid_rank_mismatch_none (body : Body) (junk : ℕ → ℝ) (m0 : M
     { blockShape := [1], indexMap := fun _ _ => [0] }) (by simp)).1
   simp at hlen
 
+/-- `KernelSpec.WellFormed` rejects an over-broad `footprint := Set.univ` with a non-constant
+`readIn`, so no runner can satisfy `KernelSpec.Correct` for it. -/
+theorem spec_univ_footprint_not_wellFormed :
+    let spec : KernelSpec (Tensor ℝ [1]) Unit (Tensor ℝ [1]) :=
+      { readIn := (Layout.rowMajor 0 0 [1]).read
+        readSt := fun _ => ()
+        readOut := (Layout.rowMajor 1 0 [1]).read
+        footprint := Set.univ
+        math := fun _ x => x
+        mutate := fun _ _ => ()
+        requires := fun _ _ => True }
+    ¬ spec.WellFormed ∧ ∀ run, ¬ spec.Correct run := by
+  dsimp only
+  have hnot : ¬ ({ readIn := (Layout.rowMajor 0 0 [1]).read
+                   readSt := fun _ => ()
+                   readOut := (Layout.rowMajor 1 0 [1]).read
+                   footprint := Set.univ
+                   math := fun _ x => x
+                   mutate := fun _ _ => ()
+                   requires := fun _ _ => True } :
+      KernelSpec (Tensor ℝ [1]) Unit (Tensor ℝ [1])).WellFormed := by
+    intro hwf
+    have heq := hwf.readIn_outside_footprint (fun _ _ => 0) (fun _ _ => 1)
+      (fun _ ha => False.elim (ha trivial))
+    have h0 := congrArg (fun t => t.get1 ⟨0, by decide⟩) heq
+    simp [Layout.read, Tensor.get1, Mem.read] at h0
+  exact ⟨hnot, fun run hcorr => hnot (hcorr (fun _ => 0) (fun _ _ => 0) trivial).1⟩
+
+/-- `KernelSpec.WellFormed` rejects a spec whose `readOut` reads a buffer outside `footprint`,
+so no runner can satisfy `KernelSpec.Correct` for it. -/
+theorem spec_readOut_outside_footprint_not_wellFormed :
+    let spec : KernelSpec (Tensor ℝ [1]) Unit (Tensor ℝ [1]) :=
+      { readIn := (Layout.rowMajor 0 0 [1]).read
+        readSt := fun _ => ()
+        readOut := (Layout.rowMajor 0 0 [1]).read
+        footprint := Mem.bufFootprint 1
+        math := fun _ x => x
+        mutate := fun _ _ => ()
+        requires := fun _ _ => True }
+    ¬ spec.WellFormed ∧ ∀ run, ¬ spec.Correct run := by
+  dsimp only
+  have hnot : ¬ ({ readIn := (Layout.rowMajor 0 0 [1]).read
+                   readSt := fun _ => ()
+                   readOut := (Layout.rowMajor 0 0 [1]).read
+                   footprint := Mem.bufFootprint 1
+                   math := fun _ x => x
+                   mutate := fun _ _ => ()
+                   requires := fun _ _ => True } :
+      KernelSpec (Tensor ℝ [1]) Unit (Tensor ℝ [1])).WellFormed := by
+    intro hwf
+    have heq := hwf.readOut_on_footprint (fun _ _ => 0) (fun b _ => if b = 0 then 1 else 0)
+      (by
+        intro ⟨b, a⟩ hb
+        have hb1 : b = 1 := hb
+        simp [Mem.read, hb1])
+    have h0 := congrArg (fun t => t.get1 ⟨0, by decide⟩) heq
+    simp [Layout.rowMajor, Layout.read, Tensor.get1, Mem.read] at h0
+  exact ⟨hnot, fun run hcorr => hnot (hcorr (fun _ => 0) (fun _ _ => 0) trivial).1⟩
+
+/-- `KernelSpec.WellFormed` rejects a spec whose `readSt` reads a buffer outside `footprint`,
+so no runner can satisfy `KernelSpec.Correct` for it. -/
+theorem spec_readSt_outside_footprint_not_wellFormed :
+    let spec : KernelSpec Unit (Tensor ℝ [1]) Unit :=
+      { readIn := fun _ => ()
+        readSt := (Layout.rowMajor 0 0 [1]).read
+        readOut := fun _ => ()
+        footprint := Mem.bufFootprint 1
+        math := fun _ _ => ()
+        mutate := fun st _ => st
+        requires := fun _ _ => True }
+    ¬ spec.WellFormed ∧ ∀ run, ¬ spec.Correct run := by
+  dsimp only
+  have hnot : ¬ ({ readIn := fun _ => ()
+                   readSt := (Layout.rowMajor 0 0 [1]).read
+                   readOut := fun _ => ()
+                   footprint := Mem.bufFootprint 1
+                   math := fun _ _ => ()
+                   mutate := fun st _ => st
+                   requires := fun _ _ => True } :
+      KernelSpec Unit (Tensor ℝ [1]) Unit).WellFormed := by
+    intro hwf
+    have heq := hwf.readSt_on_footprint (fun _ _ => 0) (fun b _ => if b = 0 then 1 else 0)
+      (by
+        intro ⟨b, a⟩ hb
+        have hb1 : b = 1 := hb
+        simp [Mem.read, hb1])
+    have h0 := congrArg (fun t => t.get1 ⟨0, by decide⟩) heq
+    simp [Layout.rowMajor, Layout.read, Tensor.get1, Mem.read] at h0
+  exact ⟨hnot, fun run hcorr => hnot (hcorr (fun _ => 0) (fun _ _ => 0) trivial).1⟩
+
 end TpuKernelLean.Tests

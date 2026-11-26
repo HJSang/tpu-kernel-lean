@@ -218,7 +218,7 @@ theorem qkNormRopeOpsMath_exact (eps : ℝ) {T numQ numKV h : ℕ}
 
 end
 
-/-- Five-part `KernelSpec` for fused QK RMSNorm + NeoX RoPE over `ops` (`qk_norm_rope.py:79-119`). -/
+/-- Four-part `KernelSpec` for fused QK RMSNorm + NeoX RoPE over `ops` (`qk_norm_rope.py:79-119`). -/
 def qkNormRopeSpec (ops : FOps) (T numQ numKV h : ℕ) (eps : ℝ)
     (qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf : BufId) :
     KernelSpec (QkNormRopeIn T numQ numKV h) Unit (QkNormRopeOut T numQ numKV h) :=
@@ -446,6 +446,45 @@ theorem qkNormRope_loadQkv_ignores_v (T numQ numKV h bm : ℕ)
 
 noncomputable section
 
+/-- `qkNormRopeSpec` has a well-formed layout whenever both output buffers are disjoint from all
+four input buffers. -/
+theorem qkNormRopeSpec_wellFormed (ops : FOps) (T numQ numKV h : ℕ) (eps : ℝ)
+    (qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf : BufId)
+    (hdisj : ∀ b ∈ [qOutBuf, kOutBuf], b ≠ qkvBuf ∧ b ≠ csBuf ∧ b ≠ qwBuf ∧ b ≠ kwBuf) :
+    (qkNormRopeSpec ops T numQ numKV h eps qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf).WellFormed where
+  readOut_on_footprint _ _ hagree :=
+    congrArg₂ QkNormRopeOut.mk
+      (Layout.read_eq_of_agreeOn _
+        ((Layout.footprint_subset_buf _).trans Set.subset_union_left) hagree)
+      (Layout.read_eq_of_agreeOn _
+        ((Layout.footprint_subset_buf _).trans Set.subset_union_right) hagree)
+  readSt_on_footprint _ _ _ := rfl
+  readIn_outside_footprint _ _ hagree := by
+    have h1 := hdisj qOutBuf (by simp)
+    have h2 := hdisj kOutBuf (by simp)
+    have hqkv := Layout.read_eq_of_agreeOutside
+      (Layout.rowMajor qkvBuf 0 [T, (numQ + 2 * numKV) * (2 * h)])
+      (Set.disjoint_union_right.mpr
+        ⟨Layout.disjoint_bufFootprint _ h1.1.symm, Layout.disjoint_bufFootprint _ h2.1.symm⟩)
+      hagree
+    have hcs := Layout.read_eq_of_agreeOutside
+      (Layout.rowMajor csBuf 0 [T, 2 * h])
+      (Set.disjoint_union_right.mpr
+        ⟨Layout.disjoint_bufFootprint _ h1.2.1.symm, Layout.disjoint_bufFootprint _ h2.2.1.symm⟩)
+      hagree
+    have hqw := Layout.read_eq_of_agreeOutside
+      (Layout.rowMajor qwBuf 0 [2 * h])
+      (Set.disjoint_union_right.mpr
+        ⟨Layout.disjoint_bufFootprint _ h1.2.2.1.symm, Layout.disjoint_bufFootprint _ h2.2.2.1.symm⟩)
+      hagree
+    have hkw := Layout.read_eq_of_agreeOutside
+      (Layout.rowMajor kwBuf 0 [2 * h])
+      (Set.disjoint_union_right.mpr
+        ⟨Layout.disjoint_bufFootprint _ h1.2.2.2.symm, Layout.disjoint_bufFootprint _ h2.2.2.2.symm⟩)
+      hagree
+    dsimp only [qkNormRopeSpec]
+    rw [hqkv, hcs, hqw, hkw]
+
 /-- Main `pallas_call` correctness theorem for `_qk_norm_rope_jax` (`qk_norm_rope.py:79-119`):
 for every `T`, positive block size `bm`, `ops` and junk, whenever the spec preconditions hold
 (including `0 < eps`), the run is defined, both outputs match `qkNormRopeOpsMath`, and nothing
@@ -458,6 +497,8 @@ theorem qkNormRope_pallas_correct (ops : FOps) (T numQ numKV h bm : ℕ) (hbm : 
         (qkNormRopeBody ops numQ numKV h eps)) := by
   intro junk m0 hreq
   rcases hreq with ⟨_heps, hT, hnumQ, hnumKV, hh, hqk, hdisj⟩
+  refine ⟨qkNormRopeSpec_wellFormed ops T numQ numKV h eps
+    qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf hdisj, ?_⟩
   set gs := qkNormRopeGridSpec T numQ numKV h bm qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf with hgs
   set body := qkNormRopeBody ops numQ numKV h eps with hbody
   have hwd := qkNormRope_wellDefined ops T numQ numKV h bm hT hbm hnumQ hnumKV hh eps
@@ -606,7 +647,7 @@ theorem qkNormRope_exact_correct (T numQ numKV h bm : ℕ) (hbm : 0 < bm)
         spec.readOut m' = qkNormRopeExactMath eps (spec.readIn m0) ∧
         Mem.agreeOutside spec.footprint m0 m' := by
   intro spec junk m0 hreq
-  obtain ⟨m', hcall, hout, -, hframe⟩ :=
+  obtain ⟨-, m', hcall, hout, -, hframe⟩ :=
     qkNormRope_pallas_correct FOps.exact T numQ numKV h bm hbm eps
       qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf junk m0 hreq
   exact ⟨m', hcall, hout.trans (qkNormRopeOpsMath_exact eps (spec.readIn m0)), hframe⟩
@@ -626,7 +667,7 @@ theorem qkNormRope_v_unchanged (ops : FOps) (T numQ numKV h bm : ℕ) (hbm : 0 <
       ((numQ + numKV) * (2 * h) + hd.val * (2 * h) + d.val)
     m'.read qkvBuf off = m0.read qkvBuf off := by
   have hT : 0 < T := Nat.lt_of_le_of_lt (Nat.zero_le _) t.isLt
-  obtain ⟨n, hcall, -, -, hframe⟩ :=
+  obtain ⟨-, n, hcall, -, -, hframe⟩ :=
     qkNormRope_pallas_correct ops T numQ numKV h bm hbm eps
       qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf junk m0
       ⟨heps, hT, hnumQ, hnumKV, hh, hqk, hdisj⟩
@@ -674,10 +715,10 @@ theorem qkNormRope_batch_invariant (ops : FOps) {T T' numQ numKV h bm bm' : ℕ}
         m₂.read kOutBuf' (t'.val * (numKV * (2 * h)) + (hd.val * (2 * h) + d.val))) := by
   have hT : 0 < T := Nat.lt_of_le_of_lt (Nat.zero_le _) t.isLt
   have hT' : 0 < T' := Nat.lt_of_le_of_lt (Nat.zero_le _) t'.isLt
-  obtain ⟨n₁, e₁, v₁, -, -⟩ :=
+  obtain ⟨-, n₁, e₁, v₁, -, -⟩ :=
     qkNormRope_pallas_correct ops T numQ numKV h bm hbm eps
       qkvBuf csBuf qwBuf kwBuf qOutBuf kOutBuf junk m0 ⟨heps, hT, hnumQ, hnumKV, hh, hqk, hdisj⟩
-  obtain ⟨n₂, e₂, v₂, -, -⟩ :=
+  obtain ⟨-, n₂, e₂, v₂, -, -⟩ :=
     qkNormRope_pallas_correct ops T' numQ numKV h bm' hbm' eps
       qkvBuf' csBuf' qwBuf' kwBuf' qOutBuf' kOutBuf' junk' m0'
       ⟨heps, hT', hnumQ, hnumKV, hh, hqk', hdisj'⟩

@@ -32,10 +32,10 @@ theorem v_mutation_no_effect (ops : FOps) (T numQ numKV h bm : ℕ) (hbm : 0 < b
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
     rcases hb with rfl | rfl <;> decide
   have hT : 0 < T := Nat.lt_of_le_of_lt (Nat.zero_le _) tv.isLt
-  obtain ⟨m₁, h₁, -, -, -⟩ :=
+  obtain ⟨-, m₁, h₁, -, -, -⟩ :=
     qkNormRope_pallas_correct ops T numQ numKV h bm hbm eps 0 1 2 3 4 5 junk m0
       ⟨heps, hT, hnumQ, hnumKV, hh, by decide, hdisj⟩
-  obtain ⟨m₂, h₂, -, -, -⟩ :=
+  obtain ⟨-, m₂, h₂, -, -, -⟩ :=
     qkNormRope_pallas_correct ops T numQ numKV h bm hbm eps 0 1 2 3 4 5 junk m0'
       ⟨heps, hT, hnumQ, hnumKV, hh, by decide, hdisj⟩
   have hbi : ∀ t : Fin T,
@@ -90,7 +90,7 @@ theorem non_divisible_default_block (ops : FOps) (eps : ℝ) (heps : 0 < eps)
     intro b hb
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hb
     rcases hb with rfl | rfl <;> decide
-  obtain ⟨m', hcall, -, -, -⟩ :=
+  obtain ⟨-, m', hcall, -, -, -⟩ :=
     qkNormRope_defaultBlock_correct ops 300 4 2 64 (by decide) eps 0 1 2 3 4 5 junk m0
       ⟨heps, by decide, by decide, by decide, by decide, by decide, hdisj⟩
   have hv := qkNormRope_v_unchanged ops 300 4 2 64 (defaultBlockTokens 300)

@@ -44,6 +44,13 @@ theorem read_eq_of_agreeOutside {s : List ℕ} (l : Layout s) {S : Set Addr} {m 
   intro hmem
   exact Set.disjoint_left.mp hdisj ⟨idx, rfl⟩ hmem
 
+/-- Reading through a layout depends only on memory inside any region containing its footprint. -/
+theorem read_eq_of_agreeOn {s : List ℕ} (l : Layout s) {S : Set Addr} {m m' : Mem}
+    (hsub : l.footprint ⊆ S) (hagree : Mem.agreeOn S m m') :
+    l.read m = l.read m' := by
+  funext idx
+  exact hagree (l.buf, l.off idx) (hsub ⟨idx, rfl⟩)
+
 /-- Contiguous row-major layouts are injective. -/
 theorem rowMajor_injective (buf : BufId) (base : ℕ) (s : List ℕ) :
     (rowMajor buf base s).Injective := by
@@ -62,6 +69,13 @@ theorem footprint_subset_buf {s : List ℕ} (l : Layout s) :
     l.footprint ⊆ Mem.bufFootprint l.buf := by
   rintro a ⟨idx, rfl⟩
   rfl
+
+/-- A layout's footprint is disjoint from any other buffer's footprint. -/
+theorem disjoint_bufFootprint {s : List ℕ} (l : Layout s) {b : BufId} (hne : l.buf ≠ b) :
+    _root_.Disjoint l.footprint (Mem.bufFootprint b) := by
+  rw [Set.disjoint_left]
+  rintro a ⟨idx, rfl⟩ hmem
+  exact hne hmem
 
 end Layout
 

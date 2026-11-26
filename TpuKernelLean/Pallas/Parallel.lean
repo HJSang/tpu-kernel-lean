@@ -1765,10 +1765,10 @@ theorem pallasCall_par_correct {I S O : Type*} {C : ℕ}
     (flushOrder : List (Fin C))
     (hflush : flushOrder.Perm (List.finRange C)) :
     let m' := pallasExecPar gs body junk m0 assign initScratch trace flushOrder
-    spec.closeOut (spec.readOut m') (spec.math (spec.readSt m0) (spec.readIn m0)) ∧
-    spec.closeSt (spec.readSt m') (spec.mutate (spec.readSt m0) (spec.readIn m0)) ∧
+    spec.readOut m' = spec.math (spec.readSt m0) (spec.readIn m0) ∧
+    spec.readSt m' = spec.mutate (spec.readSt m0) (spec.readIn m0) ∧
     Mem.agreeOutside spec.footprint m0 m' := by
-  obtain ⟨mSeq, hcall, hOut, hSt, hFrame⟩ := hcorr junk m0 hreq
+  obtain ⟨-, mSeq, hcall, hOut, hSt, hFrame⟩ := hcorr junk m0 hreq
   have hwd : gs.WellDefined body m0 := by
     by_contra h
     rw [pallasCall_of_not_wellDefined junk h] at hcall

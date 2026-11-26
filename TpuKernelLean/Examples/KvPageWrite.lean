@@ -34,7 +34,7 @@ def writePagesMut {N M P : ℕ} (st : WritePagesSt N P) (inp : WritePagesIn M P)
       else
         st.kv.get2 j p }
 
-/-- Five-part `KernelSpec` for `write_pages` with distinct buffers and injective in-range `blockIds`. -/
+/-- Four-part `KernelSpec` for `write_pages` with distinct buffers and injective in-range `blockIds`. -/
 def writePagesSpec (N M P : ℕ) (idsBuf pagesBuf kvBuf : BufId) :
     KernelSpec (WritePagesIn M P) (WritePagesSt N P) Unit :=
   { readIn := fun m =>
@@ -499,13 +499,28 @@ theorem writePages_wellDefined (N M P : ℕ) (idsBuf pagesBuf kvBuf : BufId) (hM
   · intro hne
     exact absurd rfl hne
 
-/-- Main correctness theorem: `write_pages` is well defined and satisfies its 5-part `KernelSpec`
+/-- `writePagesSpec` has a well-formed layout whenever `kvBuf` is distinct from `pagesBuf` and
+`idsBuf`. -/
+theorem writePagesSpec_wellFormed (N M P : ℕ) (idsBuf pagesBuf kvBuf : BufId)
+    (hkv_pages : kvBuf ≠ pagesBuf) (hkv_ids : kvBuf ≠ idsBuf) :
+    (writePagesSpec N M P idsBuf pagesBuf kvBuf).WellFormed where
+  readOut_on_footprint _ _ _ := rfl
+  readSt_on_footprint _ _ hagree :=
+    congrArg WritePagesSt.mk
+      (Layout.read_eq_of_agreeOn _ (Layout.footprint_subset_buf _) hagree)
+  readIn_outside_footprint _ _ hagree :=
+    congrArg₂ WritePagesIn.mk
+      (Layout.read_eq_of_agreeOutside _ (Layout.disjoint_bufFootprint _ hkv_pages.symm) hagree)
+      (funext fun i => hagree (idsBuf, i.val) (fun h => hkv_ids h.symm))
+
+/-- Main correctness theorem: `write_pages` is well defined and satisfies its `KernelSpec`
 when ids are distinct non-negative int32s below `N`, buffers are distinct and pages are non-empty. -/
 theorem writePages_correct (N M P : ℕ) (idsBuf pagesBuf kvBuf : BufId) (hP : 0 < P) :
     (writePagesSpec N M P idsBuf pagesBuf kvBuf).Correct
       (writePagesRun N M P idsBuf pagesBuf kvBuf) := by
   intro junk m0 hreq
   rcases hreq with ⟨hM, hids, hinj, hkv_pages, hkv_ids, _⟩
+  refine ⟨writePagesSpec_wellFormed N M P idsBuf pagesBuf kvBuf hkv_pages hkv_ids, ?_⟩
   have hids' : ∀ i : Fin M, ∃ n : ℕ, n < N ∧ decodeInt32Nat (m0.read idsBuf i.val) = some n := hids
   have hinj' : Function.Injective fun i : Fin M => m0.read idsBuf i.val := hinj
   have hwf := writePages_wellDefined N M P idsBuf pagesBuf kvBuf hM hP m0 hids' hinj'
