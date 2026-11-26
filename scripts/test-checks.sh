@@ -19,6 +19,7 @@ make_copy() {
   cp "${REPO_ROOT}/README.md" "${dest}/README.md"
   cp "${REPO_ROOT}/manifest.json" "${dest}/manifest.json"
   cp -R "${REPO_ROOT}/TpuKernelLean" "${dest}/TpuKernelLean"
+  cp -R "${REPO_ROOT}/e2e" "${dest}/e2e"
 }
 
 assert_rejects() {
@@ -82,7 +83,17 @@ assert_rejects "readme-missing-glob" "*_nonexistent_glob_xyz" \
 rm -rf "${tmp}"
 tmp=""
 
-# 5. Manifest with one example's entry removed.
+# 5. README missing a manifest `correct` theorem.
+tmp="$(mktemp -d)"
+make_copy "${tmp}"
+sed 's/`gatedRmsNorm_correct`, //' "${tmp}/README.md" > "${tmp}/README.md.tmp"
+mv "${tmp}/README.md.tmp" "${tmp}/README.md"
+assert_rejects "readme-missing-correct" "gatedRmsNorm_correct" \
+  bash "${REPO_ROOT}/scripts/check-readme.sh" "${tmp}"
+rm -rf "${tmp}"
+tmp=""
+
+# 6. Manifest with one example's entry removed.
 tmp="$(mktemp -d)"
 make_copy "${tmp}"
 jq 'del(.kernels.kv_page_write)' "${tmp}/manifest.json" > "${tmp}/manifest.json.tmp"
@@ -92,7 +103,7 @@ assert_rejects "manifest-missing-example" "TpuKernelLean.Examples.KvPageWrite" \
 rm -rf "${tmp}"
 tmp=""
 
-# 6. Manifest with an unreferenced entry carrying a repository field.
+# 7. Manifest with an unreferenced entry carrying a repository field.
 tmp="$(mktemp -d)"
 make_copy "${tmp}"
 jq '.kernels.block_scaled_mm.repository = "example/repo"' "${tmp}/manifest.json" > "${tmp}/manifest.json.tmp"
@@ -102,12 +113,21 @@ assert_rejects "manifest-unreferenced-with-repo" "unreferenced entry must not ca
 rm -rf "${tmp}"
 tmp=""
 
-# 7. Manifest with a malformed blob SHA.
+# 8. Manifest with a malformed blob SHA.
 tmp="$(mktemp -d)"
 make_copy "${tmp}"
 jq '.kernels.kv_page_write.blob_sha = "not-a-sha"' "${tmp}/manifest.json" > "${tmp}/manifest.json.tmp"
 mv "${tmp}/manifest.json.tmp" "${tmp}/manifest.json"
 assert_rejects "manifest-bad-sha" "40-char lowercase hex SHA" \
+  bash "${REPO_ROOT}/scripts/check-manifest.sh" --offline "${tmp}"
+rm -rf "${tmp}"
+tmp=""
+
+# 9. Manifest missing required e2e test file for a public pallas_call entry.
+tmp="$(mktemp -d)"
+make_copy "${tmp}"
+rm "${tmp}/e2e/test_kv_page_write.py"
+assert_rejects "manifest-missing-e2e" "e2e/test_kv_page_write.py" \
   bash "${REPO_ROOT}/scripts/check-manifest.sh" --offline "${tmp}"
 rm -rf "${tmp}"
 tmp=""

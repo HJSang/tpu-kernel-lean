@@ -1,10 +1,29 @@
 #!/usr/bin/env bash
 # Verify manifest.json offline structure/files and (without --offline) against GitHub Contents API:
-# - Checks JSON shape, required fields, 40-hex commit/blob SHAs, level values, module existence,
-#   coverage of TpuKernelLean/Examples/*.lean, and that unreferenced entries carry no repo/path/commit.
+# - Checks JSON shape, required fields (including `correct`, `other`, `witness`), 40-hex commit/blob
+#   SHAs, level values, module existence, recursive coverage of TpuKernelLean/Examples/**/*.lean,
+#   uniqueness of (repository, path) pins, e2e/test_<key>.py presence for public pallas_call entries,
+#   an explicit allowlist for `source: "unreferenced"`, and that unreferenced entries carry no
+#   repository, path, or commit.
 # - Online mode also checks each pinned commit's git blob SHA equals manifest blob_sha (exit 1)
 #   and each tracked ref's git blob SHA equals manifest blob_sha (difference -> STALE, exit 2).
 set -euo pipefail
+
+# Explicit allowlist of manifest keys permitted to use `"source": "unreferenced"`.
+ALLOWED_UNREFERENCED_KEYS=(
+  "block_scaled_mm"
+  "grouped_scaled_mm"
+)
+
+is_allowed_unreferenced() {
+  local key="$1" allowed
+  for allowed in "${ALLOWED_UNREFERENCED_KEYS[@]}"; do
+    if [[ "${allowed}" == "${key}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 OFFLINE=0
 TARGET=""
@@ -118,7 +137,13 @@ entries="$(jq -er '
       (if (.value.source | type == "string") then .value.source else "" end),
       (if (.value | has("repository")) then "1" else "0" end),
       (if (.value | has("path")) then "1" else "0" end),
-      (if (.value | has("commit")) then "1" else "0" end)
+      (if (.value | has("commit")) then "1" else "0" end),
+      (if (.value.correct | type == "array" and ([.[] | type == "string"] | all)) then (.value.correct | length | tostring) else "BAD" end),
+      (if (.value.other | type == "array" and ([.[] | type == "string"] | all)) then (.value.other | length | tostring) else "BAD" end),
+      (if (.value | has("witness") | not) then "MISSING"
+       elif (.value.witness == null) then "NULL"
+       elif (.value.witness | type == "string" and length > 0) then "STR"
+       else "BAD" end)
     ] | join("\u001f")
   end
 ' "${MANIFEST}")" || {
@@ -129,24 +154,42 @@ entries="$(jq -er '
 had_error=0
 had_stale=0
 
-# Verify every TpuKernelLean/Examples/*.lean module has a manifest entry.
+# 1. Verify every .lean file under TpuKernelLean/Examples/ (recursively) has a manifest entry.
 if [[ ! -d "${REPO_ROOT}/TpuKernelLean/Examples" ]]; then
   echo "ERROR: examples directory not found: ${REPO_ROOT}/TpuKernelLean/Examples" >&2
   had_error=1
 else
-  for lean_file in "${REPO_ROOT}/TpuKernelLean/Examples"/*.lean; do
+  while IFS= read -r lean_file; do
     [[ -f "${lean_file}" ]] || continue
-    stem="$(basename "${lean_file}" .lean)"
-    expected_mod="TpuKernelLean.Examples.${stem}"
+    rel_file="${lean_file#"${REPO_ROOT}/"}"
+    expected_mod="$(printf '%s' "${rel_file%.lean}" | tr '/' '.')"
     if ! jq -e --arg mod "${expected_mod}" '[.kernels[].lean_module] | index($mod) != null' "${MANIFEST}" >/dev/null; then
-      rel_file="${lean_file#"${REPO_ROOT}/"}"
       echo "ERROR: ${expected_mod} (${rel_file}) has no entry in ${MANIFEST}" >&2
       had_error=1
     fi
-  done
+  done < <(find "${REPO_ROOT}/TpuKernelLean/Examples" -type f -name '*.lean' | LC_ALL=C sort)
 fi
 
-while IFS=$'\x1f' read -r kernel lean_module level repo ref commit path blob_sha source has_repo has_path has_commit; do
+# 2. Reject duplicate (repository, path) pins across distinct entries.
+dup_repo_paths="$(jq -r '
+  [
+    .kernels | to_entries[] |
+    select((.value.source // "") != "unreferenced" and (.value.repository | type == "string") and (.value.path | type == "string")) |
+    { key: .key, rp: "\(.value.repository)::\(.value.path)" }
+  ]
+  | group_by(.rp)
+  | map(select(length > 1))
+  | .[] | "\(.[0].rp) pinned by: \(map(.key) | join(", "))"
+' "${MANIFEST}")"
+if [[ -n "${dup_repo_paths}" ]]; then
+  while IFS= read -r dup_line; do
+    [[ -z "${dup_line}" ]] && continue
+    echo "ERROR: duplicate (repository, path) pin: ${dup_line}" >&2
+    had_error=1
+  done <<< "${dup_repo_paths}"
+fi
+
+while IFS=$'\x1f' read -r kernel lean_module level repo ref commit path blob_sha source has_repo has_path has_commit correct_len other_len witness_kind; do
   [[ -z "${kernel}" ]] && continue
 
   if [[ -z "${lean_module}" ]]; then
@@ -159,6 +202,33 @@ while IFS=$'\x1f' read -r kernel lean_module level repo ref commit path blob_sha
     had_error=1
     continue
   fi
+  if [[ "${correct_len}" == "BAD" ]]; then
+    echo "ERROR: ${kernel}: 'correct' must be an array of theorem names" >&2
+    had_error=1
+    continue
+  fi
+  if [[ "${other_len}" == "BAD" ]]; then
+    echo "ERROR: ${kernel}: 'other' must be an array of theorem names" >&2
+    had_error=1
+    continue
+  fi
+  if [[ "${witness_kind}" == "MISSING" || "${witness_kind}" == "BAD" ]]; then
+    echo "ERROR: ${kernel}: 'witness' must be a non-empty theorem name string or null" >&2
+    had_error=1
+    continue
+  fi
+  if [[ "${level}" == "pallas_call" ]]; then
+    if [[ "${correct_len}" == "0" ]]; then
+      echo "ERROR: ${kernel}: pallas_call entry must declare at least one 'correct' theorem" >&2
+      had_error=1
+      continue
+    fi
+    if [[ "${witness_kind}" != "STR" ]]; then
+      echo "ERROR: ${kernel}: pallas_call entry must declare a non-null 'witness' theorem" >&2
+      had_error=1
+      continue
+    fi
+  fi
 
   mod_rel="$(printf '%s' "${lean_module}" | tr '.' '/').lean"
   if [[ ! -f "${REPO_ROOT}/${mod_rel}" ]]; then
@@ -167,8 +237,13 @@ while IFS=$'\x1f' read -r kernel lean_module level repo ref commit path blob_sha
     continue
   fi
 
-  # An entry whose kernel source is not public must not record repository, path, or commit.
+  # An entry whose kernel source is not public must be explicitly allowlisted and omit repository/path/commit.
   if [[ "${source}" == "unreferenced" ]]; then
+    if ! is_allowed_unreferenced "${kernel}"; then
+      echo "ERROR: ${kernel}: source 'unreferenced' is not in the allowlist (${ALLOWED_UNREFERENCED_KEYS[*]})" >&2
+      had_error=1
+      continue
+    fi
     if [[ "${has_repo}" != "0" || "${has_path}" != "0" || "${has_commit}" != "0" ]]; then
       echo "ERROR: ${kernel}: unreferenced entry must not carry repository, path, or commit" >&2
       had_error=1
@@ -197,6 +272,15 @@ while IFS=$'\x1f' read -r kernel lean_module level repo ref commit path blob_sha
     echo "ERROR: ${kernel}: blob_sha must be a 40-char lowercase hex SHA, got '${blob_sha}'" >&2
     had_error=1
     continue
+  fi
+
+  if [[ "${level}" == "pallas_call" ]]; then
+    e2e_test="${REPO_ROOT}/e2e/test_${kernel}.py"
+    if [[ ! -f "${e2e_test}" ]]; then
+      echo "ERROR: ${kernel}: missing required e2e test file e2e/test_${kernel}.py" >&2
+      had_error=1
+      continue
+    fi
   fi
 
   if (( OFFLINE != 0 )); then

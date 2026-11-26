@@ -16,7 +16,8 @@ compile_fixture() {
 
 run_gate() {
   local dir="$1" out_dir="$2"
-  lake env sh -c 'LEAN_PATH="$1:$LEAN_PATH" exec lean --run scripts/CheckAxioms.lean --base "$2" --root GateFixture' \
+  lake env lean --run scripts/CheckAxioms.lean --scan-only --parse-root Init --base "$dir" --root GateFixture &&
+  lake env sh -c 'LEAN_PATH="$1:$LEAN_PATH" exec lean --run scripts/CheckAxioms.lean --check-env --base "$2" --root GateFixture' \
     _ "$out_dir" "$dir"
 }
 

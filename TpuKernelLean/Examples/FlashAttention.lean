@@ -35,7 +35,7 @@ structure OnlineState (D : ℕ) where
   /-- Running maximum attention logit over all KV blocks consumed so far. -/
   m : ℝ
   /-- Running sum of shifted exponentials `∑ exp(s_j - m)`. -/
-  ℓ : ℝ
+  l : ℝ
   /-- Running unnormalized weighted-value accumulator `∑ exp(s_j - m) * V_j`. -/
   acc : Fin D → ℝ
 
@@ -95,12 +95,12 @@ def OnlineState.initBlock {B D : ℕ} (smScale : ℝ) (q : Fin D → ℝ)
   let s : Fin (B + 1) → ℝ := fun j => smScale * ∑ d : Fin D, q d * K j d
   let m := Tensor.vecMax s
   { m := m
-    ℓ := ∑ j : Fin (B + 1), Real.exp (s j - m)
+    l := ∑ j : Fin (B + 1), Real.exp (s j - m)
     acc := fun d => ∑ j : Fin (B + 1), Real.exp (s j - m) * V j d }
 
-/-- Consume one non-empty KV block `(K, V)`, rescaling the unnormalized `(ℓ, acc)` accumulator by
+/-- Consume one non-empty KV block `(K, V)`, rescaling the unnormalized `(l, acc)` accumulator by
 `exp(m_prev - m_next)` and normalizing once at the end via `OnlineState.normalize`. Note: this
-differs from `sglang_tpu/kernels/flash_attention.py:329–372`, which updates `(m, ℓ)` the same way
+differs from `sglang_tpu/kernels/flash_attention.py:329–372`, which updates `(m, l)` the same way
 (lines 329–343) but renormalizes `acc_scratch_ref` by `1 / l_next` on every step (lines 357–363)
 with no final division in `store_output` (lines 365–372). -/
 def OnlineState.step {B D : ℕ} (smScale : ℝ) (q : Fin D → ℝ)
@@ -110,12 +110,12 @@ def OnlineState.step {B D : ℕ} (smScale : ℝ) (q : Fin D → ℝ)
   let mNext := max st.m mCurr
   let alpha := Real.exp (st.m - mNext)
   { m := mNext
-    ℓ := alpha * st.ℓ + ∑ j : Fin (B + 1), Real.exp (s j - mNext)
+    l := alpha * st.l + ∑ j : Fin (B + 1), Real.exp (s j - mNext)
     acc := fun d => alpha * st.acc d + ∑ j : Fin (B + 1), Real.exp (s j - mNext) * V j d }
 
-/-- Normalize the accumulated online-softmax output as `acc / ℓ`. -/
+/-- Normalize the accumulated online-softmax output as `acc / l`. -/
 def OnlineState.normalize {D : ℕ} (st : OnlineState D) : Fin D → ℝ :=
-  fun d => st.acc d / st.ℓ
+  fun d => st.acc d / st.l
 
 /-- Run online softmax over `n + 1` consecutive KV blocks of size `B + 1`. -/
 def runBlocks {B D : ℕ} (smScale : ℝ) (q : Fin D → ℝ) :

@@ -9,6 +9,11 @@
     "kv_page_write": {
       "lean_module": "TpuKernelLean.Examples.KvPageWrite",
       "level": "pallas_call",
+      "correct": [
+        "writePages_correct"
+      ],
+      "other": [],
+      "witness": "TpuKernelLean.Tests.EndToEnd.kvPageWrite_endToEnd",
       "repository": "sgl-project/sglang-torchtpu",
       "ref": "main",
       "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
@@ -26,6 +31,15 @@
     "qk_norm_rope": {
       "lean_module": "TpuKernelLean.Examples.QkNormRope",
       "level": "pallas_call",
+      "correct": [
+        "qkNormRope_pallas_correct",
+        "qkNormRope_exact_correct"
+      ],
+      "other": [
+        "qkNormRope_v_unchanged",
+        "qkNormRope_batch_invariant"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.qkNormRope_endToEnd",
       "repository": "sgl-project/sglang-torchtpu",
       "ref": "main",
       "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
@@ -47,6 +61,14 @@
     "fp8_linear_small_m": {
       "lean_module": "TpuKernelLean.Examples.Fp8LinearSmallM",
       "level": "pallas_call",
+      "correct": [
+        "fp8Linear_correct"
+      ],
+      "other": [
+        "fp8Linear_fixedShape_row_independent",
+        "fp8LinearElem_exact"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.fp8LinearSmallM_endToEnd",
       "repository": "sgl-project/sglang-torchtpu",
       "ref": "main",
       "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
@@ -63,6 +85,11 @@
     "flash_attention": {
       "lean_module": "TpuKernelLean.Examples.FlashAttention",
       "level": "algorithm_only",
+      "correct": [],
+      "other": [
+        "runBlocks_normalize_eq_attentionRow"
+      ],
+      "witness": null,
       "repository": "sgl-project/sglang-torchtpu",
       "ref": "main",
       "commit": "b5391b80c58b75781ce36e3ca5e95c4e92367740",
@@ -89,6 +116,16 @@
     "true_on_policy_norm": {
       "lean_module": "TpuKernelLean.Examples.TrueOnPolicyNorm",
       "level": "pallas_call",
+      "correct": [
+        "rmsNorm_correct",
+        "rmsNormResidual_correct",
+        "gatedRmsNorm_correct"
+      ],
+      "other": [
+        "rmsNorm_batch_invariant",
+        "normRow_exact"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.rmsNorm_endToEnd",
       "repository": "sgl-project/sglang-torchtpu",
       "ref": "main",
       "pr": 2299,
@@ -110,6 +147,14 @@
     "true_on_policy_matmul": {
       "lean_module": "TpuKernelLean.Examples.TrueOnPolicyMatmul",
       "level": "pallas_call",
+      "correct": [
+        "matmul_correct"
+      ],
+      "other": [
+        "matmul_batch_invariant",
+        "matmulElem_exact"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.matmul_endToEnd",
       "repository": "sgl-project/sglang-torchtpu",
       "ref": "main",
       "pr": 2299,
@@ -128,12 +173,31 @@
     "block_scaled_mm": {
       "lean_module": "TpuKernelLean.Examples.BlockScaledMm",
       "level": "pallas_call",
+      "correct": [
+        "blockwiseScaledMm_correct",
+        "blockwise128ScaledMm_correct"
+      ],
+      "other": [
+        "blockwiseScaledMm_elem_independent",
+        "blockwise128ScaledMm_elem_independent",
+        "blockwiseScaledMmElem_exact",
+        "blockwise128ScaledMmElem_exact"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.blockwise128ScaledMm_endToEnd",
       "source": "unreferenced",
       "note": "Two block-scaled FP8 matmul kernels (any block size; block 128 with optional bias). Their sources are not public, so no repository, path or commit is recorded and the staleness check skips this entry."
     },
     "grouped_scaled_mm": {
       "lean_module": "TpuKernelLean.Examples.GroupedScaledMm",
       "level": "pallas_call",
+      "correct": [
+        "rowwiseScaledGroupedMm_correct"
+      ],
+      "other": [
+        "groupedElem_exact",
+        "ValidSchedule.exists_owner"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.groupedScaledMm_endToEnd",
       "source": "unreferenced",
       "note": "A grouped row-scaled FP8 matmul kernel (b stored [G, K, N]). Its source is not public, so no repository, path or commit is recorded and the staleness check skips this entry. The visit-schedule construction is not modelled; ValidSchedule states what the proof needs from it."
     }

@@ -30,14 +30,16 @@ A well-defined kernel also gives the same result when its `parallel` grid dimens
 
 All declarations depend only on the standard axioms (`propext`, `Classical.choice`, `Quot.sound`). `lakefile.toml` enables `warningAsError = true` so Lean warnings fail the build. CI (`.github/workflows/lean.yml`) runs `lake build`, then `bash scripts/ci.sh`:
 
-- `scripts/CheckAxioms.lean` checks every declaration in the library, public or private, for other axioms and for `unsafe`, `opaque`, `@[extern]` and `@[implemented_by]`. It checks that the model files import only each other and Mathlib, that every source file is imported by `TpuKernelLean.lean`, and it parses each source to reject `example` declarations and tokens such as `sorry` and `native_decide`.
+- `lake env leanchecker` independently replays every declaration of every module under `TpuKernelLean/` through the kernel before the axiom gate runs.
+- `scripts/CheckAxioms.lean` runs in two phases so no library module is loaded with initializers enabled until source scanning passes:
+  1. **Source scan (`--scan-only`, trusted parser environment only):** parses every source file with Lean's parser and rejects parse errors, `import Lean*`/`Lake*`, `example`, metaprogramming and notation commands (`elab`, `elab_rules`, `macro`, `macro_rules`, `syntax`, `declare_syntax_cat`, `notation`, `infix*`/`prefix`/`postfix`, `run_cmd`, `run_elab`, `run_meta`, `initialize`, `builtin_initialize`, `#eval`), `set_option` outside the allowlist, non-ASCII characters in declaration names, and forbidden tokens such as `sorry` and `native_decide`.
+  2. **Environment audit (`--check-env`):** checks every declaration in the library (public or private) for non-standard axioms, `unsafe`/`partial`, `opaque`, `@[extern]`, `@[implemented_by]`, and non-ASCII names; checks trusted-module imports and that every source file is imported by `TpuKernelLean.lean`; enforces protected model names and namespaces; rejects truncating `ℕ` subtraction or `Nat.pred` in `BlockSpec.indexMap` and `ReductionKernel.outIndexMap`; and audits every `correct`, `other`, and `witness` theorem in `manifest.json` (verifying compiled existence, non-trivial types, `TpuKernelLean.Pallas.pallasCall` reachability, and that each `witness` in `TpuKernelLean.Tests.*` shares a kernel definition with its `correct` theorem).
 - `scripts/test-gate.sh` runs that gate on the files under `scripts/gate-fixtures/`: one clean file that must pass and ten that must be rejected for a stated reason.
 - `scripts/check-ledger.sh` checks that every `PAL-` rule id in `TpuKernelLean/` has a matching heading in `docs/pallas-model-ledger.md` and vice versa.
-- `scripts/check-readme.sh` checks that every theorem name or glob in the *Theorems* column above is declared under `TpuKernelLean/`.
-- `scripts/check-manifest.sh --offline` checks `manifest.json` structure, required fields, SHA formats, `level` values, coverage of `TpuKernelLean/Examples/*.lean`, module file existence, and that `unreferenced` entries omit `repository`, `path`, and `commit`.
+- `scripts/check-readme.sh` checks every row of the *What is verified* table above against the `manifest.json` theorem registry (every listed theorem or glob must be in that row's manifest entry, and every `correct` theorem in `manifest.json` must appear in the README).
+- `scripts/check-manifest.sh --offline` checks `manifest.json` structure, required fields (including `correct`, `other`, `witness`), SHA formats, `level` values, recursive coverage of `TpuKernelLean/Examples/**/*.lean`, unique `(repository, path)` pins, `e2e/test_<key>.py` existence for public `pallas_call` entries, module file existence, and that `unreferenced` entries are on the explicit allowlist and omit `repository`, `path`, and `commit`.
 - `scripts/test-checks.sh` runs positive and negative fixture tests for the three shell checks above.
-
-The gate does not re-check proofs with an independent kernel.
+- `scripts/test-attacks.sh` runs reduced negative fixtures under `scripts/attack-fixtures/` for the red-team attack classes (non-Pallas runners, namespace shadowing, truncating `ℕ` index subtraction, provenance spoofing, kernel-checker bypasses and `initialize`, check-script gaps, `local notation`, and Unicode homoglyphs) and verifies each is rejected with the expected reason.
 
 ### End-to-end differential tests
 
@@ -147,7 +149,7 @@ Within a defined run:
 - **Examples:**
   - `FlashAttention` proves an unnormalised-accumulator recurrence; the sglang kernel renormalises every step.
   - The true-on-policy `logprob` kernel (scratch plus `-inf` masking) is not done. The attention, GDN and MoE ops wrap engine kernels that use manual DMA, which the model cannot express.
-- **Tooling:** an RC toolchain; the Lean `pallasCall` model itself is noncomputable (differential testing in `e2e/` checks the Python kernels against NumPy transcriptions of the proved formulas rather than executing the Lean model directly); no check that a headline theorem's statement uses only model and spec definitions.
+- **Tooling:** an RC toolchain; the Lean `pallasCall` model itself is noncomputable (differential testing in `e2e/` checks the Python kernels against NumPy transcriptions of the proved formulas rather than executing the Lean model directly); automated checks cannot verify that a spec's `requires` or `math` matches the intended semantics or that a Lean body matches its pinned Python source (see [CONTRIBUTING.md](CONTRIBUTING.md#what-the-checks-cannot-catch)).
 
 ## Future work
 

@@ -543,22 +543,20 @@ section Proof
 
 variable {d : Dims} {bf : Bufs} {go gid mt : ℕ → ℕ} {M : ℕ} {m0 : Mem}
 
-local notation "GS" => gridSpec d bf
-local notation "SC" => GridSpec.scalarPrefetch (gridSpec d bf) m0
-
 private theorem sc_go (hr : Requires d bf go gid mt M m0) {i : ℕ} (hi : i ≤ d.G + 1) :
-    SC (Nat.pair 0 i) = (go i : ℤ) := by
+    (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 0 i) = (go i : ℤ) := by
   simp [GridSpec.scalarPrefetch, gridSpec, scalarTable, hr.read_go i hi]
 
 private theorem sc_gid (hr : Requires d bf go gid mt M m0) {v : ℕ} (hv : v < d.tilesM + d.G) :
-    SC (Nat.pair 1 v) = (gid v : ℤ) := by
+    (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v) = (gid v : ℤ) := by
   simp [GridSpec.scalarPrefetch, gridSpec, scalarTable, hr.read_gid v hv]
 
 private theorem sc_mt (hr : Requires d bf go gid mt M m0) {v : ℕ} (hv : v < d.tilesM + d.G) :
-    SC (Nat.pair 2 v) = (mt v : ℤ) := by
+    (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 2 v) = (mt v : ℤ) := by
   simp [GridSpec.scalarPrefetch, gridSpec, scalarTable, hr.read_mt v hv]
 
-private theorem sc_ng (hr : Requires d bf go gid mt M m0) : SC (Nat.pair 3 0) = (d.G : ℤ) := by
+private theorem sc_ng (hr : Requires d bf go gid mt M m0) :
+    (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) = (d.G : ℤ) := by
   simp [GridSpec.scalarPrefetch, gridSpec, scalarTable, hr.read_ng]
 
 /-- The group whose `b` and `scale_b` blocks a visit loads is a real group, and the visit's own
@@ -566,7 +564,8 @@ group when that is real. -/
 private theorem weightGroup_eq (hr : Requires d bf go gid mt M m0) {v : ℕ}
     (hv : v < d.tilesM + d.G) :
     ∃ w, w < d.G ∧ (gid v < d.G → w = gid v) ∧
-      min (SC (Nat.pair 1 v)) (SC (Nat.pair 3 0) - 1) = (w : ℤ) := by
+      min ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v))
+        ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) - 1) = (w : ℤ) := by
   have hG := hr.sched.groups_pos
   by_cases h : gid v < d.G
   · exact ⟨gid v, h, fun _ => rfl, by rw [sc_gid hr hv, sc_ng hr]; exact min_eq_left (by omega)⟩
@@ -587,36 +586,41 @@ private theorem ins_ne (hr : Requires d bf go gid mt M m0) :
 private theorem blockOk_at (hr : Requires d bf go gid mt M m0) {ni v ki : ℕ} (hni : ni < d.gn)
     (hv : v < d.tilesM + d.G) (hki : ki < d.tilesK) (p : ArrayDesc × BlockSpec)
     (hp : p ∈ (gridSpec d bf).inSpecs ++ (gridSpec d bf).outSpecs) :
-    blockOk p.1.shape p.2.blockShape (p.2.indexMap [ni, v, ki] SC) = true := by
+    blockOk p.1.shape p.2.blockShape
+      (p.2.indexMap [ni, v, ki] (GridSpec.scalarPrefetch (gridSpec d bf) m0)) = true := by
   have hmt := hr.sched.mt_lt v hv
   obtain ⟨w, hw, -, hwg⟩ := weightGroup_eq hr hv
   simp only [gridSpec, List.cons_append, List.nil_append, List.mem_cons, List.not_mem_nil,
     or_false] at hp
   rcases hp with rfl | rfl | rfl | rfl | rfl
   · show blockOk [d.tilesM * d.tileM, d.tilesK * d.tileK] [d.tileM, d.tileK]
-      [SC (Nat.pair 2 v), ((ki : ℕ) : ℤ)] = true
+      [(GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 2 v), ((ki : ℕ) : ℤ)] = true
     rw [sc_mt hr hv]
     exact blockOk_cons hr.tileM_pos (mul_tile_lt hmt hr.tileM_pos)
       (blockOk_cons hr.tileK_pos (mul_tile_lt hki hr.tileK_pos) blockOk_nil)
   · show blockOk [d.G, d.tilesK * d.tileK, d.gn * d.tileN] [1, d.tileK, d.tileN]
-      [min (SC (Nat.pair 1 v)) (SC (Nat.pair 3 0) - 1), ((ki : ℕ) : ℤ), ((ni : ℕ) : ℤ)] = true
+      [min ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v))
+          ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) - 1),
+        ((ki : ℕ) : ℤ), ((ni : ℕ) : ℤ)] = true
     rw [hwg]
     exact blockOk_cons Nat.one_pos (by omega)
       (blockOk_cons hr.tileK_pos (mul_tile_lt hki hr.tileK_pos)
         (blockOk_cons hr.tileN_pos (mul_tile_lt hni hr.tileN_pos) blockOk_nil))
   · show blockOk [1, d.tilesM * d.tileM] [1, d.tileM]
-      [((0 : ℕ) : ℤ), SC (Nat.pair 2 v)] = true
+      [((0 : ℕ) : ℤ), (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 2 v)] = true
     rw [sc_mt hr hv]
     exact blockOk_cons Nat.one_pos (by decide)
       (blockOk_cons hr.tileM_pos (mul_tile_lt hmt hr.tileM_pos) blockOk_nil)
   · show blockOk [d.G, 1, d.gn * d.tileN] [1, 1, d.tileN]
-      [min (SC (Nat.pair 1 v)) (SC (Nat.pair 3 0) - 1), ((0 : ℕ) : ℤ), ((ni : ℕ) : ℤ)] = true
+      [min ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v))
+          ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) - 1),
+        ((0 : ℕ) : ℤ), ((ni : ℕ) : ℤ)] = true
     rw [hwg]
     exact blockOk_cons Nat.one_pos (by omega)
       (blockOk_cons Nat.one_pos (by decide)
         (blockOk_cons hr.tileN_pos (mul_tile_lt hni hr.tileN_pos) blockOk_nil))
   · show blockOk [d.tilesM * d.tileM, d.gn * d.tileN] [d.tileM, d.tileN]
-      [SC (Nat.pair 2 v), ((ni : ℕ) : ℤ)] = true
+      [(GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 2 v), ((ni : ℕ) : ℤ)] = true
     rw [sc_mt hr hv]
     exact blockOk_cons hr.tileM_pos (mul_tile_lt hmt hr.tileM_pos)
       (blockOk_cons hr.tileN_pos (mul_tile_lt hni hr.tileN_pos) blockOk_nil)
@@ -625,7 +629,7 @@ private theorem blockOk_at (hr : Requires d bf go gid mt M m0) {ni v ki : ℕ} (
 `ni * tilesM + mt v` along the grid, because `mt` is monotone. -/
 private theorem out_noRevisit (hr : Requires d bf go gid mt M m0) :
     noRevisit ((gridPoints [d.gn, d.tilesM + d.G, d.tilesK]).map
-      fun g => (oSpec d).indexMap g SC) = true := by
+      fun g => (oSpec d).indexMap g (GridSpec.scalarPrefetch (gridSpec d bf) m0)) = true := by
   refine noRevisit_of_sorted
     (fun z : List ℤ => (z.getD 1 0).toNat * d.tilesM + (z.getD 0 0).toNat) _ ?_ ?_
   · intro x hx y hy hxy
@@ -656,11 +660,13 @@ private theorem out_noRevisit (hr : Requires d bf go gid mt M m0) :
 `0`. -/
 private theorem accNext_reset (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m0) (ni : ℕ)
     (ins : List (List ℕ → ℝ)) (a₁ a₂ : List ℕ → ℝ) :
-    accNext ops d [ni, 0, 0] SC ins a₁ = accNext ops d [ni, 0, 0] SC ins a₂ := by
+    accNext ops d [ni, 0, 0] (GridSpec.scalarPrefetch (gridSpec d bf) m0) ins a₁ =
+      accNext ops d [ni, 0, 0] (GridSpec.scalarPrefetch (gridSpec d bf) m0) ins a₂ := by
   have hV : 0 < d.tilesM + d.G := by
     have := hr.sched.groups_pos
     omega
-  have hreal : SC (Nat.pair 1 0) < SC (Nat.pair 3 0) := by
+  have hreal : (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 0) <
+      (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) := by
     rw [sc_gid hr hV, sc_ng hr]
     exact_mod_cast hr.sched.first_real
   funext loc
@@ -809,24 +815,30 @@ private theorem step_eq (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m0)
     (m : Mem) (hm : ∀ b, b ≠ bf.oBuf → ∀ a, m.read b a = m0.read b a) (s0 s1 : OutSlot)
     {ni v k : ℕ} (hv : v < d.tilesM + d.G) :
     ∃ P S : List ℕ → ℝ,
-      stepGrid GS (body ops d) SC junk (m, [s0, s1]) [ni, v, k] =
+      stepGrid (gridSpec d bf) (body ops d) (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk
+          (m, [s0, s1]) [ni, v, k] =
         (flushOne (oPair d bf) [mt v, ni] s0 m,
           [some ([mt v, ni],
-              outNext ops d [ni, v, k] SC (loadIns GS junk m0 [ni, v, k])
-                (accNext ops d [ni, v, k] SC (loadIns GS junk m0 [ni, v, k]) S) P),
-            some ([], accNext ops d [ni, v, k] SC (loadIns GS junk m0 [ni, v, k]) S)]) ∧
+              outNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+                (loadIns (gridSpec d bf) junk m0 [ni, v, k])
+                (accNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+                  (loadIns (gridSpec d bf) junk m0 [ni, v, k]) S) P),
+            some ([], accNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+              (loadIns (gridSpec d bf) junk m0 [ni, v, k]) S)]) ∧
       (∀ O0, s0 = some ([mt v, ni], O0) →
         ∀ loc, inBounds [d.tileM, d.tileN] loc = true → P loc = O0 loc) ∧
       (∀ i A0, s1 = some (i, A0) →
         ∀ loc, inBounds [d.tileM, d.tileN] loc = true → S loc = A0 loc) := by
-  obtain ⟨P, S, hstep, hP, hS⟩ := step_raw ops d bf SC junk m s0 s1 [ni, v, k]
-  have hidx : (oSpec d).blockIdx [ni, v, k] SC = [mt v, ni] := by
+  obtain ⟨P, S, hstep, hP, hS⟩ :=
+    step_raw ops d bf (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk m s0 s1 [ni, v, k]
+  have hidx : (oSpec d).blockIdx [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0) = [mt v, ni] := by
     simp only [oSpec, BlockSpec.blockIdx, List.getD_cons_zero, List.getD_cons_succ,
       List.map_cons, List.map_nil, Int.toNat_natCast, sc_mt hr hv]
-  have hins : rawIns d bf SC junk
-      (flushOne (oPair d bf) ((oSpec d).blockIdx [ni, v, k] SC) s0 m) [ni, v, k] =
-      loadIns GS junk m0 [ni, v, k] := by
-    apply loadIns_congr GS junk SC _ m0 [ni, v, k]
+  have hins : rawIns d bf (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk
+      (flushOne (oPair d bf)
+        ((oSpec d).blockIdx [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)) s0 m) [ni, v, k] =
+      loadIns (gridSpec d bf) junk m0 [ni, v, k] := by
+    apply loadIns_congr (gridSpec d bf) junk (GridSpec.scalarPrefetch (gridSpec d bf) m0) _ m0 [ni, v, k]
     intro p hp a
     rw [flushOne_read_other_buf (oPair d bf) _ _ _ _ a (ins_ne hr p hp)]
     exact hm _ (ins_ne hr p hp) a
@@ -840,14 +852,14 @@ group, column `ni * tileN + cl` of `b[gid v]` and `scale_b[gid v]`. -/
 private theorem reads (hr : Requires d bf go gid mt M m0) (junk : ℕ → ℝ) {ni v k rl cl : ℕ}
     (hni : ni < d.gn) (hv : v < d.tilesM + d.G) (hk : k < d.tilesK) (hrl : rl < d.tileM)
     (hcl : cl < d.tileN) :
-    (∀ u < d.tileK, (loadIns GS junk m0 [ni, v, k]).getD 0 (fun _ => 0) [rl, u] =
+    (∀ u < d.tileK, (loadIns (gridSpec d bf) junk m0 [ni, v, k]).getD 0 (fun _ => 0) [rl, u] =
       rowA d bf m0 (mt v * d.tileM + rl) (k * d.tileK + u)) ∧
     (gid v < d.G → ∀ u < d.tileK,
-      (loadIns GS junk m0 [ni, v, k]).getD 1 (fun _ => 0) [0, u, cl] =
+      (loadIns (gridSpec d bf) junk m0 [ni, v, k]).getD 1 (fun _ => 0) [0, u, cl] =
         colB d bf m0 (gid v) (ni * d.tileN + cl) (k * d.tileK + u)) ∧
-    (loadIns GS junk m0 [ni, v, k]).getD 2 (fun _ => 0) [0, rl] =
+    (loadIns (gridSpec d bf) junk m0 [ni, v, k]).getD 2 (fun _ => 0) [0, rl] =
       m0.read bf.saBuf (mt v * d.tileM + rl) ∧
-    (gid v < d.G → (loadIns GS junk m0 [ni, v, k]).getD 3 (fun _ => 0) [0, 0, cl] =
+    (gid v < d.G → (loadIns (gridSpec d bf) junk m0 [ni, v, k]).getD 3 (fun _ => 0) [0, 0, cl] =
       m0.read bf.sbBuf (gid v * (d.gn * d.tileN) + (ni * d.tileN + cl))) := by
   have hmt := hr.sched.mt_lt v hv
   have hrow : mt v * d.tileM + rl < d.tilesM * d.tileM := tile_lt hmt hrl
@@ -905,14 +917,16 @@ private theorem accNext_real (ops : GroupedMmOps) (hr : Requires d bf go gid mt 
     (junk : ℕ → ℝ) {ni v k rl cl : ℕ} (hni : ni < d.gn) (hv : v < d.tilesM + d.G)
     (hk : k < d.tilesK) (hrl : rl < d.tileM) (hcl : cl < d.tileN) (hreal : gid v < d.G)
     (S : List ℕ → ℝ) :
-    accNext ops d [ni, v, k] SC (loadIns GS junk m0 [ni, v, k]) S [rl, cl] =
+    accNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+        (loadIns (gridSpec d bf) junk m0 [ni, v, k]) S [rl, cl] =
       accStep ops d.tileM d.tileN d.tileK (rowA d bf m0 (mt v * d.tileM + rl))
         (colB d bf m0 (gid v) (ni * d.tileN + cl)) (S [rl, cl]) k := by
   obtain ⟨hA, hB, -, -⟩ := reads hr junk hni hv hk hrl hcl
-  have hre : SC (Nat.pair 1 v) < SC (Nat.pair 3 0) := by
+  have hre : (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v) <
+      (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) := by
     rw [sc_gid hr hv, sc_ng hr]
     exact_mod_cast hreal
-  have hdot : dotElem ops d (loadIns GS junk m0 [ni, v, k]) [rl, cl] =
+  have hdot : dotElem ops d (loadIns (gridSpec d bf) junk m0 [ni, v, k]) [rl, cl] =
       dotTile ops d.tileM d.tileN d.tileK k (rowA d bf m0 (mt v * d.tileM + rl))
         (colB d bf m0 (gid v) (ni * d.tileN + cl)) :=
     congrArg₂ (ops.dot d.tileM d.tileN d.tileK) (funext fun u => hA u.val u.isLt)
@@ -924,19 +938,22 @@ group. -/
 private theorem tileOut_eq (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m0)
     (junk : ℕ → ℝ) {ni v k rl cl : ℕ} (hni : ni < d.gn) (hv : v < d.tilesM + d.G)
     (hk : k < d.tilesK) (hrl : rl < d.tileM) (hcl : cl < d.tileN) (A : List ℕ → ℝ) :
-    ops.cast (tileOut ops [ni, v, k] SC (loadIns GS junk m0 [ni, v, k]) A [rl, cl]) =
+    ops.cast (tileOut ops [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+        (loadIns (gridSpec d bf) junk m0 [ni, v, k]) A [rl, cl]) =
       if gid v < d.G then
         ops.cast (ops.scale (A [rl, cl]) (m0.read bf.saBuf (mt v * d.tileM + rl))
           (m0.read bf.sbBuf (gid v * (d.gn * d.tileN) + (ni * d.tileN + cl))))
       else ops.cast 0 := by
   obtain ⟨-, -, hSA, hSB⟩ := reads hr junk hni hv hk hrl hcl
   by_cases hreal : gid v < d.G
-  · have hre : SC (Nat.pair 1 v) < SC (Nat.pair 3 0) := by
+  · have hre : (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v) <
+        (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) := by
       rw [sc_gid hr hv, sc_ng hr]
       exact_mod_cast hreal
     simp only [tileOut, List.getD_cons_zero, List.getD_cons_succ, ite_eq_left hre, ite_eq_left hreal, hSA,
       hSB hreal]
-  · have hre : ¬ SC (Nat.pair 1 v) < SC (Nat.pair 3 0) := by
+  · have hre : ¬ (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v) <
+        (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 3 0) := by
       rw [sc_gid hr hv, sc_ng hr]
       exact_mod_cast hreal
     simp only [tileOut, List.getD_cons_zero, List.getD_cons_succ, ite_eq_right hre, ite_eq_right hreal]
@@ -954,17 +971,23 @@ private theorem outNext_last (ops : GroupedMmOps) (hr : Requires d bf go gid mt 
     {ni v k rl cl : ℕ} (hv : v < d.tilesM + d.G) (hk : k + 1 = d.tilesK) (hrl : rl < d.tileM)
     (ins : List (List ℕ → ℝ)) (A P : List ℕ → ℝ) :
     ((go (gid v) ≤ mt v * d.tileM + rl ∧ mt v * d.tileM + rl < go (gid v + 1)) →
-      outNext ops d [ni, v, k] SC ins A P [rl, cl] =
-        ops.cast (tileOut ops [ni, v, k] SC ins A [rl, cl])) ∧
+      outNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0) ins A P [rl, cl] =
+        ops.cast (tileOut ops [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0) ins A [rl, cl])) ∧
     (¬ (go (gid v) ≤ mt v * d.tileM + rl ∧ mt v * d.tileM + rl < go (gid v + 1)) →
-      outNext ops d [ni, v, k] SC ins A P [rl, cl] = ops.cast (ops.up (P [rl, cl]))) := by
+      outNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0) ins A P [rl, cl] =
+        ops.cast (ops.up (P [rl, cl]))) := by
   have hgid := hr.sched.gid_le v hv
   have hk' : k = d.tilesK - 1 := by omega
-  have hgs : SC (Nat.pair 0 (SC (Nat.pair 1 v)).toNat) = (go (gid v) : ℤ) := by
+  have hgs : (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+      (Nat.pair 0 ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v)).toNat) =
+      (go (gid v) : ℤ) := by
     rw [sc_gid hr hv, Int.toNat_natCast, sc_go hr (by omega)]
-  have hge : SC (Nat.pair 0 (SC (Nat.pair 1 v) + 1).toNat) = (go (gid v + 1) : ℤ) := by
+  have hge : (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+      (Nat.pair 0 ((GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 1 v) + 1).toNat) =
+      (go (gid v + 1) : ℤ) := by
     rw [sc_gid hr hv, show ((gid v : ℤ) + 1).toNat = gid v + 1 by omega, sc_go hr (by omega)]
-  have hrow : SC (Nat.pair 2 v) * (d.tileM : ℤ) = ((mt v * d.tileM : ℕ) : ℤ) := by
+  have hrow : (GridSpec.scalarPrefetch (gridSpec d bf) m0) (Nat.pair 2 v) * (d.tileM : ℤ) =
+      ((mt v * d.tileM : ℕ) : ℤ) := by
     rw [sc_mt hr hv, Nat.cast_mul]
   constructor
   · intro hown
@@ -989,7 +1012,8 @@ private theorem step_spec (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m
     (m : Mem) (hm : ∀ b, b ≠ bf.oBuf → ∀ a, m.read b a = m0.read b a) (s0 s1 : OutSlot)
     {ni v k : ℕ} (hni : ni < d.gn) (hv : v < d.tilesM + d.G) (hk : k < d.tilesK) :
     ∃ O A P S : List ℕ → ℝ,
-      stepGrid GS (body ops d) SC junk (m, [s0, s1]) [ni, v, k] =
+      stepGrid (gridSpec d bf) (body ops d) (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk
+          (m, [s0, s1]) [ni, v, k] =
         (flushOne (oPair d bf) [mt v, ni] s0 m, [some ([mt v, ni], O), some ([], A)]) ∧
       (∀ O0, s0 = some ([mt v, ni], O0) →
         ∀ rl < d.tileM, ∀ cl < d.tileN, P [rl, cl] = O0 [rl, cl]) ∧
@@ -1015,8 +1039,9 @@ private theorem step_spec (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m
   refine ⟨fun hreal => accNext_real ops hr junk hni hv hk hrl hcl hreal S,
     fun hlt => outNext_mid ops hlt _ _ _ _ _ _ _, fun heq => ?_⟩
   obtain ⟨h1, h2⟩ := outNext_last ops hr (ni := ni) (cl := cl) hv heq hrl
-    (loadIns GS junk m0 [ni, v, k])
-    (accNext ops d [ni, v, k] SC (loadIns GS junk m0 [ni, v, k]) S) P
+    (loadIns (gridSpec d bf) junk m0 [ni, v, k])
+    (accNext ops d [ni, v, k] (GridSpec.scalarPrefetch (gridSpec d bf) m0)
+      (loadIns (gridSpec d bf) junk m0 [ni, v, k]) S) P
   exact ⟨fun hown => (h1 hown).trans (tileOut_eq ops hr junk hni hv hk hrl hcl _), h2⟩
 
 /-! ### One visit: the fold over K tiles -/
@@ -1030,7 +1055,8 @@ private theorem visit_run (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m
     {ni v : ℕ} (hni : ni < d.gn) (hv : v < d.tilesM + d.G) (n : ℕ) (hn : 0 < n)
     (hle : n ≤ d.tilesK) :
     ∃ O A : List ℕ → ℝ,
-      ((List.range n).map fun k => [ni, v, k]).foldl (stepGrid GS (body ops d) SC junk)
+      ((List.range n).map fun k => [ni, v, k]).foldl
+          (stepGrid (gridSpec d bf) (body ops d) (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk)
           (m, [s0, s1]) =
         (flushOne (oPair d bf) [mt v, ni] s0 m, [some ([mt v, ni], O), some ([], A)]) ∧
       (gid v < d.G → ∀ rl < d.tileM, ∀ cl < d.tileN,
@@ -1135,7 +1161,8 @@ private theorem visit_view (ops : GroupedMmOps) (hr : Requires d bf go gid mt M 
     (junk : ℕ → ℝ) {ni v : ℕ} (hni : ni < d.gn) (hv : v < d.tilesM + d.G) (m : Mem)
     (hm : ∀ b, b ≠ bf.oBuf → ∀ a, m.read b a = m0.read b a) (s0 s1 : OutSlot) :
     ∃ O A : List ℕ → ℝ,
-      ((List.range d.tilesK).map fun k => [ni, v, k]).foldl (stepGrid GS (body ops d) SC junk)
+      ((List.range d.tilesK).map fun k => [ni, v, k]).foldl
+          (stepGrid (gridSpec d bf) (body ops d) (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk)
           (m, [s0, s1]) =
         (flushOne (oPair d bf) [mt v, ni] s0 m, [some ([mt v, ni], O), some ([], A)]) ∧
       (∀ a, addrInBlock (oArr d bf) [d.tileM, d.tileN] [mt v, ni] a = false →
@@ -1177,7 +1204,7 @@ private theorem col_run (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m0)
     ∃ (m' : Mem) (O A : List ℕ → ℝ),
       (List.range j).foldl (fun st v =>
           ((List.range d.tilesK).map fun k => [ni, v, k]).foldl
-            (stepGrid GS (body ops d) SC junk) st) (m, [s0, s1]) =
+            (stepGrid (gridSpec d bf) (body ops d) (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk) st) (m, [s0, s1]) =
         (m', [some ([mt (j - 1), ni], O), some ([], A)]) ∧
       (∀ b, b ≠ bf.oBuf → ∀ a, m'.read b a = m0.read b a) ∧
       (∀ a, (∀ t, addrInBlock (oArr d bf) [d.tileM, d.tileN] [t, ni] a = false) →
@@ -1266,7 +1293,7 @@ private theorem grid_run (ops : GroupedMmOps) (hr : Requires d bf go gid mt M m0
       (List.range n).foldl (fun st ni =>
           (List.range (d.tilesM + d.G)).foldl (fun st v =>
             ((List.range d.tilesK).map fun k => [ni, v, k]).foldl
-              (stepGrid GS (body ops d) SC junk) st) st) (m, [s0, s1]) = (m', [t0, t1]) ∧
+              (stepGrid (gridSpec d bf) (body ops d) (GridSpec.scalarPrefetch (gridSpec d bf) m0) junk) st) st) (m, [s0, s1]) = (m', [t0, t1]) ∧
       (∀ b, b ≠ bf.oBuf → ∀ a, m'.read b a = m0.read b a) ∧
       ∀ ni < n, ∀ u < d.tilesM + d.G, ∀ rl < d.tileM, ∀ cl < d.tileN,
         (go (gid u) ≤ mt u * d.tileM + rl ∧ mt u * d.tileM + rl < go (gid u + 1)) →
