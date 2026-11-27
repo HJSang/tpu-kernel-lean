@@ -5,6 +5,7 @@ import TpuKernelLean.Examples.Fp8LinearSmallM
 import TpuKernelLean.Examples.QkNormRope
 import TpuKernelLean.Examples.BlockScaledMm
 import TpuKernelLean.Examples.GroupedScaledMm
+import TpuKernelLean.Examples.RouterTopk
 import TpuKernelLean.Tests.GroupedScaledMm
 
 /-!
@@ -562,6 +563,157 @@ theorem groupedScaledMm_endToEnd (junk : ℕ → ℝ) :
       Finset.sum_range_zero] at h
     norm_num [groupedInitMem, Mem.read] at h
     exact h
+
+/-! ### 8. `RouterTopk` -/
+
+section RouterTopk
+
+open Examples.RouterTopk
+
+private theorem routerScore_log3 : score RouterOps.exact .f32 (Real.log 3) = 3 / 4 := by
+  simp only [score, RouterOps.exact, CastOps.cast, CastOps.exact, id]
+  rw [Real.exp_neg, Real.exp_log (by norm_num)]
+  norm_num
+
+private theorem routerScore_zero : score RouterOps.exact .f32 0 = 1 / 2 := by
+  simp only [score, RouterOps.exact, CastOps.cast, CastOps.exact, id]
+  norm_num
+
+private theorem routerScore_negLog3 : score RouterOps.exact .f32 (-Real.log 3) = 1 / 4 := by
+  simp only [score, RouterOps.exact, CastOps.cast, CastOps.exact, id]
+  rw [neg_neg, Real.exp_log (by norm_num)]
+  norm_num
+
+/-- `mathRow` at `RouterOps.exact`, `f32`, `tokens = k = 2`, renormalized with `eps = 1/4`,
+`scale = 5/2`, once the scores `s` and biased choices `c` of the row are known. -/
+private theorem routerRow (x b s c : Fin 3 → ℝ)
+    (hs : ∀ e, score RouterOps.exact .f32 (x e) = s e)
+    (hc : ∀ e, choice RouterOps.exact .f32 (x e) (b e) = c e) (i : ℕ) :
+    (mathRow RouterOps.exact .f32 2 2 true (1 / 4) (5 / 2) x b).1 i =
+        gatherAt s (atRank c i) /
+          (gatherAt s (atRank c 0) + gatherAt s (atRank c 1) + 1 / 4) * (5 / 2) ∧
+      (mathRow RouterOps.exact .f32 2 2 true (1 / 4) (5 / 2) x b).2 i = atRank c i := by
+  have hs' : (fun e => score RouterOps.exact .f32 (x e)) = s := funext hs
+  have hc' : (fun e => choice RouterOps.exact .f32 (x e) (b e)) = c := funext hc
+  simp only [mathRow, hs', hc']
+  refine ⟨?_, trivial⟩
+  change gatherAt s (atRank c i) / ((∑ j : Fin 2, gatherAt s (atRank c j.val)) + 1 / 4) *
+    (5 / 2) = _
+  rw [Fin.sum_univ_two]
+  rfl
+
+open Classical in
+private theorem rank_three (c : Fin 3 → ℝ) (e : Fin 3) :
+    rank c e = (if Before c 0 e then 1 else 0) + (if Before c 1 e then 1 else 0) +
+      (if Before c 2 e then 1 else 0) := by
+  rw [rank, Finset.card_filter, Fin.sum_univ_three]
+
+/-- Concrete initial memory for `routerTopk_endToEnd` (`tokens = 2`, `experts = 3`, `k = 2`):
+- `logits` (`0`): row 0 `[log 3, 0, -log 3]` (scores `[3/4, 1/2, 1/4]`), row 1
+  `[log 3, -log 3, -log 3]` (scores `[3/4, 1/4, 1/4]`);
+- `bias` (`1`): `[0, 1/2, 1]`, so the biased choices are `[3/4, 1, 5/4]` and `[3/4, 3/4, 5/4]`:
+  row 0 picks experts `2, 1` by bias against their unbiased order, row 1 picks `2` and then breaks
+  the tie between `0` and `1` toward `0`. -/
+private def routerInitMem : Mem
+  | 0, 0 => Real.log 3
+  | 0, 2 => -Real.log 3
+  | 0, 3 => Real.log 3
+  | 0, 4 => -Real.log 3
+  | 0, 5 => -Real.log 3
+  | 1, 1 => 1 / 2
+  | 1, 2 => 1
+  | _, _ => 0
+
+/-- End-to-end `RouterTopk` on the round-loop path (`tokens = 2`, `experts = 3`, `k = 2`, `f32`
+logits, renormalized with `eps = 1/4`, `scale = 5/2`, under `RouterOps.exact`):
+`weights = [[5/8, 5/4], [1/2, 3/2]]` and `ids = [[2, 1], [2, 0]]`. -/
+theorem routerTopk_endToEnd (junk : ℕ → ℝ) :
+    ∃ m', routerTopkRun RouterOps.exact .f32 2 3 2 true (1 / 4) (5 / 2) 0 1 2 3
+        junk routerInitMem = some m' ∧
+      m'.read 2 0 = 5 / 8 ∧ m'.read 2 1 = 5 / 4 ∧ m'.read 2 2 = 1 / 2 ∧ m'.read 2 3 = 3 / 2 ∧
+      m'.read 3 0 = 2 ∧ m'.read 3 1 = 1 ∧ m'.read 3 2 = 2 ∧ m'.read 3 3 = 0 := by
+  obtain ⟨m', hcall, hval, -⟩ :=
+    routerTopk_correct RouterOps.exact .f32 (fun h => by cases h) 2 3 2
+      ⟨by decide, by decide, by decide, fun h => by cases h⟩ true (1 / 4) (5 / 2) 0 1 2 3
+      (by decide) (by decide) (by decide) (by decide) (by decide) junk routerInitMem
+  -- row 0: scores [3/4, 1/2, 1/4], choices [3/4, 1, 5/4]
+  have r0 := routerRow (fun e : Fin 3 => routerInitMem.read 0 (0 * 3 + e.val))
+    (fun e : Fin 3 => routerInitMem.read 1 e.val) ![3 / 4, 1 / 2, 1 / 4] ![3 / 4, 1, 5 / 4]
+    (by
+      intro e
+      fin_cases e
+      exacts [routerScore_log3, routerScore_zero, routerScore_negLog3])
+    (by
+      intro e
+      fin_cases e
+      · show score RouterOps.exact .f32 (Real.log 3) + 0 = 3 / 4
+        rw [routerScore_log3]
+        norm_num
+      · show score RouterOps.exact .f32 0 + 1 / 2 = 1
+        rw [routerScore_zero]
+        norm_num
+      · show score RouterOps.exact .f32 (-Real.log 3) + 1 = 5 / 4
+        rw [routerScore_negLog3]
+        norm_num)
+  -- row 1: scores [3/4, 1/4, 1/4], choices [3/4, 3/4, 5/4]
+  have r1 := routerRow (fun e : Fin 3 => routerInitMem.read 0 (1 * 3 + e.val))
+    (fun e : Fin 3 => routerInitMem.read 1 e.val) ![3 / 4, 1 / 4, 1 / 4] ![3 / 4, 3 / 4, 5 / 4]
+    (by
+      intro e
+      fin_cases e
+      exacts [routerScore_log3, routerScore_negLog3, routerScore_negLog3])
+    (by
+      intro e
+      fin_cases e
+      · show score RouterOps.exact .f32 (Real.log 3) + 0 = 3 / 4
+        rw [routerScore_log3]
+        norm_num
+      · show score RouterOps.exact .f32 (-Real.log 3) + 1 / 2 = 3 / 4
+        rw [routerScore_negLog3]
+        norm_num
+      · show score RouterOps.exact .f32 (-Real.log 3) + 1 = 5 / 4
+        rw [routerScore_negLog3]
+        norm_num)
+  have a00 : atRank ![(3 : ℝ) / 4, 1, 5 / 4] 0 = 2 :=
+    atRank_eq_of_rank _ (e := 2) (by rw [rank_three]; simp [Before]; norm_num)
+  have a01 : atRank ![(3 : ℝ) / 4, 1, 5 / 4] 1 = 1 :=
+    atRank_eq_of_rank _ (e := 1) (by rw [rank_three]; simp [Before]; norm_num)
+  have a10 : atRank ![(3 : ℝ) / 4, 3 / 4, 5 / 4] 0 = 2 :=
+    atRank_eq_of_rank _ (e := 2) (by rw [rank_three]; simp [Before]; norm_num)
+  have a11 : atRank ![(3 : ℝ) / 4, 3 / 4, 5 / 4] 1 = 0 :=
+    atRank_eq_of_rank _ (e := 0) (by rw [rank_three]; simp [Before]; norm_num)
+  have v00 := hval ⟨0, by decide⟩ ⟨0, by decide⟩
+  have v01 := hval ⟨0, by decide⟩ ⟨1, by decide⟩
+  have v10 := hval ⟨1, by decide⟩ ⟨0, by decide⟩
+  have v11 := hval ⟨1, by decide⟩ ⟨1, by decide⟩
+  simp only [(r0 _).1, (r0 _).2, (r1 _).1, (r1 _).2, a00, a01, a10, a11] at v00 v01 v10 v11
+  refine ⟨m', hcall, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · have h := v00.1
+    norm_num [gatherAt] at h
+    exact h
+  · have h := v01.1
+    norm_num [gatherAt] at h
+    exact h
+  · have h := v10.1
+    norm_num [gatherAt] at h
+    exact h
+  · have h := v11.1
+    norm_num [gatherAt] at h
+    exact h
+  · have h := v00.2
+    norm_num at h
+    exact h
+  · have h := v01.2
+    norm_num at h
+    exact h
+  · have h := v10.2
+    norm_num at h
+    exact h
+  · have h := v11.2
+    norm_num at h
+    exact h
+
+end RouterTopk
 
 end
 

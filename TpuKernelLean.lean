@@ -17,6 +17,7 @@ import TpuKernelLean.Examples.TrueOnPolicyMatmul
 import TpuKernelLean.Examples.Fp8LinearSmallM
 import TpuKernelLean.Examples.BlockScaledMm
 import TpuKernelLean.Examples.GroupedScaledMm
+import TpuKernelLean.Examples.RouterTopk
 import TpuKernelLean.Tests.Regression
 import TpuKernelLean.Tests.Scratch
 import TpuKernelLean.Tests.QkNormRope

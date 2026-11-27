@@ -170,6 +170,37 @@
       ],
       "note": "Merged upstream as PR 2299. The proof was written against PR head 0f138b0, where the N block was the constant _MM_BN; it is now row_block(n, _MM_BN, 128), which the Lean parameter bn already covers."
     },
+    "router_topk": {
+      "lean_module": "TpuKernelLean.Examples.RouterTopk",
+      "level": "pallas_call",
+      "correct": [
+        "routerTopk_correct",
+        "routerTopkSpec_correct"
+      ],
+      "other": [
+        "kernelRow_eq_mathRow",
+        "tileBefore_iff",
+        "atRank_before_atRank",
+        "atRank_before_unselected"
+      ],
+      "witness": "TpuKernelLean.Tests.EndToEnd.routerTopk_endToEnd",
+      "repository": "sgl-project/sglang-torchtpu",
+      "ref": "main",
+      "commit": "9836f74c7ae127d763d8766e655086d084ea0b99",
+      "path": "sglang_tpu/kernels/router_topk.py",
+      "blob_sha": "c2c382c9c1bee341f08f893b237ac07cdd3de220",
+      "functions": [
+        "_topk_kernel",
+        "_topk_kernel_1tok",
+        "router_topk_jax"
+      ],
+      "not_modelled": [
+        "the torch op registration and biased_topk_impl dispatch (sglang_tpu/moe/router_topk_tpu.py)",
+        "bias.reshape(experts).astype(float32) before the pallas_call (the bias buffer holds f32 values)",
+        "vmem_limit_bytes and allow_input_fusion (performance hints)"
+      ],
+      "note": "The TPU kernel benchmark (moe_router_topk_decode) vendors this file at the same commit. All three code paths of _topk_kernel are modelled: the one-token rank path, the bf16 packed-key rounds and the plain rounds."
+    },
     "block_scaled_mm": {
       "lean_module": "TpuKernelLean.Examples.BlockScaledMm",
       "level": "pallas_call",
