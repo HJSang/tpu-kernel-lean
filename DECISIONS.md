@@ -183,6 +183,74 @@ or that narrows what the Lean theorems cover. Kinds:
 - Alternative: tighten Python `supports()` to check `k > 0 and n > 0` and verify rounded scaling.
 - Kind: stricter (`k > 0, n > 0`) / scope.
 
+## `RouterTopk` (`sglang_tpu/kernels/router_topk.py`)
+
+### D-ROUTER-TIE: the selection order and its tie rule are the spec
+- Decided: `mathRow` (`TpuKernelLean/Examples/RouterTopk.lean:236`) selects by `Before`
+  (`:51`): `j` precedes `e` when `c e < c j`, or `c j = c e` and `j < e`. `rank` (`:80`) counts the
+  experts before `e`, `atRank` (`:135`) returns the expert of a given rank, and
+  `atRank_before_atRank` (`:155`) and `atRank_before_unselected` (`:162`) restate the order and
+  that no unselected expert beats a selected one. The kernel's own rank formula
+  (`router_topk.py:121-131`) is proved equal to `Before` (`tileBefore_iff`, `:403`), not assumed.
+- Basis: the module docstring (`router_topk.py:5-6,97-99`) and the benchmark task contract
+  (ties go to the lowest expert id; ids in selection order). `rank` is the position in a stable
+  descending sort, the formulation of the benchmark's float64 oracle.
+- Alternative: specify only the selected set; that would not pin the returned order or ties.
+- Kind: scope.
+
+### D-ROUTER-EXACT: compares, max, integer min, `where` and one-term sums are exact
+- Decided: only the float arithmetic is opaque (`RouterOps`, `:177`: casts, `exp`, `+`, `/`, `*`,
+  the renormalization `rowSum`). `>`, `>=`, `==`, `jnp.max` of f32 values, every integer op and
+  `jnp.where` are exact. `jnp.sum(jnp.where(hit, scores, 0.0))` (`router_topk.py:81,140-144`) is the
+  real sum, because at most one term is non-zero and adding exact zeros is exact in IEEE.
+- Basis: IEEE comparison and `max` return or compare the operands themselves; `x + 0 = x` for every
+  finite `x` (`-0.0` and `+0.0` are one value here, D-CORE-REAL-MEM).
+- Alternative: opaque compares and reductions; the selection could then not be stated.
+- Kind: hardware-dependent (IEEE behaviour of Mosaic's compare, max and add).
+
+### D-ROUTER-NEGINF: the `-inf` mask is `⊥` of `WithBot ℝ`, inside the body only
+- Decided: the round loop keeps `choice` as `Fin E → WithBot ℝ` (`RoundState`, `:254`) and
+  masks a picked lane with `⊥` (`router_topk.py:61,84`). Memory never holds `-inf`.
+- Basis: `-inf` is below every finite f32 and equal to itself, which is what `max` and `==` use.
+- Alternative: an extended-real memory model.
+- Kind: scope.
+
+### D-ROUTER-PACKED: bf16 keys through opaque bitcasts, one stated bit fact, `experts < 32768`
+- Decided: the packed path (`router_topk.py:63-69,76-78`) is transcribed with opaque
+  `f32Bits`/`f32OfBits` (`:177`), `>> 16` as floor division by `65536` and `& 0xFFFF` as the
+  non-negative remainder. The proof needs `RouterOps.Bf16BitsExact` (`:201`): a bf16 value
+  promoted to f32, cut to its top 16 bits and shifted back, bitcasts to itself. `Supports.packed_fits`
+  (`:369`) requires `experts < 32768` with bf16 logits, so `expert * 2^16 + bits` and
+  `no_key = experts * 2^16` fit in int32 and the model's unbounded integers agree with the kernel.
+- Basis: an IEEE f32 that is a bf16 value has zero low 16 bits. Memory holds reals, so the
+  fact is stated, not proved; the e2e test runs the packed path. `RouterOps.exact` (`:208`) does not
+  satisfy it, so the end-to-end witness uses f32 logits.
+- Alternative: a bit-level float model.
+- Kind: hardware-dependent / launch obligation (`experts < 32768`).
+
+### D-ROUTER-ROWS: row-by-row body; rank tiles summed over lanes
+- Decided: `body` (`:347`) computes each output row from its logits row with `kernelRow`
+  (`:308`); `rowSum tokens k` is parameterised by the `[tokens, k]` shape. The rank path's double
+  loop over 128-lane tiles (`router_topk.py:121-133`) is one sum over lanes `j` with the tile of `j`
+  and `e` read from `j / 128` and `e / 128` (`tileRank`, `:296`). The transposes and broadcasts of
+  `router_topk.py:116-117,145-146` move data only and are not modelled.
+- Basis: every op of `_topk_kernel` acts along the expert axis; the dispatch to the rank path
+  (`router_topk.py:35`, `UseRankPath`, `:300`) requires `experts % 128 == 0`, so the tiles cover
+  every lane once.
+- Alternative: transcribe the `[tokens, experts]` arrays and the tile loops literally.
+- Kind: scope.
+
+### D-ROUTER-SCOPE: `0 < tokens`, `0 < k <= experts`; no exact-arithmetic theorem
+- Decided: `Supports` (`:365`) requires `0 < tokens`, `0 < k`, `k <= experts`. With `k > experts`
+  the round loop would pick an already masked lane again; the kernel does not check this. No
+  `*_exact` theorem links `score` to the real sigmoid: the claim is the bitwise one over
+  `RouterOps`. The bias is the f32 buffer the `pallas_call` receives; the host-side
+  `bias.reshape(experts).astype(float32)` (`router_topk.py:190`) is not modelled.
+- Basis: top-k of fewer than `k` experts has no meaning for the caller; positive sizes are
+  required for non-empty blocks (D-CORE-GRID-EMPTY).
+- Alternative: specify the repeated-lane output for `k > experts`.
+- Kind: stricter (`k <= experts`) / scope.
+
 ## `TrueOnPolicyNorm` (PR 2299 `sglang_tpu/rl/true_on_policy/norm_kernel.py`)
 
 ### D-NORM-PR2299: written against the PR 2299 head, repinned to `main` after the merge
